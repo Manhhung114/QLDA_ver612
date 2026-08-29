@@ -1,0 +1,390 @@
+from __future__ import annotations
+
+import io
+import os
+import json
+import re
+import sqlite3
+import tempfile
+import time
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from urllib.parse import quote_plus
+
+import pandas as pd
+import streamlit as st
+import streamlit.components.v1 as components
+
+from cloud_db import CloudDatabase, progress_delta, planned_progress, calculate_delay_days
+from mpp_cloud_reader import MppCloudError, read_mpp
+from legal_documents import LegalRepository, sync_source, sync_all, search_vsqi, search_online_all, search_online_sites
+from settings_store import DEFAULT_SPECIFIED_SEARCH_DOMAINS
+from ai_service import (AIServiceError, AISettings, OpenAIProjectAssistant, GeminiSettings, GeminiProjectAssistant, ProjectContextBuilder)
+from drive_gateway import DriveGateway, DriveGatewayError, config_from_streamlit
+
+try:
+    import plotly.express as px
+except Exception:
+    px = None
+
+APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = APP_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+IS_RENDER = str(os.environ.get("RENDER", "")).strip().lower() == "true"
+IS_RAILWAY = bool(
+    str(os.environ.get("RAILWAY_ENVIRONMENT", "")).strip()
+    or str(os.environ.get("RAILWAY_SERVICE_ID", "")).strip()
+    or str(os.environ.get("RAILWAY_PROJECT_ID", "")).strip()
+)
+DEPLOY_PLATFORM = "Railway" if IS_RAILWAY else ("Render" if IS_RENDER else "Streamlit/Local")
+DEFAULT_DB_PATH = Path("/var/data/qlda_cloud.db") if IS_RENDER else (DATA_DIR / "qlda_cloud.db")
+DB_PATH = Path(os.environ.get("QLDA_DB_PATH", str(DEFAULT_DB_PATH)))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+LEGAL_CACHE_PATH = APP_DIR / "legal_cache.json"
+
+# V4.0.8 - Google Search credentials on Streamlit are read from Secrets.
+# Never commit these values to GitHub.
+try:
+    if "GOOGLE_SEARCH_API_KEY" in st.secrets:
+        os.environ.setdefault("GOOGLE_SEARCH_API_KEY", str(st.secrets["GOOGLE_SEARCH_API_KEY"]))
+    if "GOOGLE_SEARCH_CX" in st.secrets:
+        os.environ.setdefault("GOOGLE_SEARCH_CX", str(st.secrets["GOOGLE_SEARCH_CX"]))
+except Exception:
+    pass
+
+DOC_CONFIG = {
+    "NCR": {
+        "title": "NCR - Non-Conformance Report",
+        "statuses": ["Mở", "Đang khắc phục", "Chờ kiểm tra", "Đóng", "Hủy"],
+        "done_statuses": ["Đóng", "Hủy"],
+        "subject": "Nội dung không phù hợp",
+        "code_label": "Mã NCR *",
+        "issuer_label": "Người phát hành / trình",
+        "assignee_label": "Người / Đơn vị xử lý",
+        "response_label": "Biện pháp khắc phục / Kết quả",
+    },
+    "RFA": {
+        "title": "RFA - Request for Approval",
+        "statuses": ["Soạn thảo", "Đã gửi", "Chờ duyệt", "Đã duyệt", "Từ chối", "Đóng"],
+        "done_statuses": ["Đã duyệt", "Từ chối", "Đóng"],
+        "subject": "Nội dung trình duyệt",
+        "code_label": "Mã RFA *",
+        "issuer_label": "Người trình",
+        "assignee_label": "Người / Đơn vị duyệt",
+        "response_label": "Ý kiến / Kết quả phê duyệt",
+    },
+    "RFI": {
+        "title": "RFI - Request for Information",
+        "statuses": ["Đã gửi", "Chờ phản hồi", "Đã phản hồi", "Đóng", "Hủy"],
+        "done_statuses": ["Đã phản hồi", "Đóng", "Hủy"],
+        "subject": "Câu hỏi / Nội dung cần làm rõ",
+        "code_label": "Mã RFI *",
+        "issuer_label": "Người gửi",
+        "assignee_label": "Người / Đơn vị phản hồi",
+        "response_label": "Nội dung phản hồi",
+    },
+    "BBHT": {
+        "title": "Biên bản hiện trường",
+        "statuses": ["Mới lập", "Đã phát hành", "Đang xử lý", "Đã xử lý", "Đóng", "Hủy"],
+        "done_statuses": ["Đã xử lý", "Đóng", "Hủy"],
+        "subject": "Nội dung / Sự việc hiện trường",
+        "code_label": "Mã biên bản *",
+        "issuer_label": "Người / Đơn vị lập biên bản",
+        "assignee_label": "Người / Đơn vị xử lý",
+        "response_label": "Kết quả xử lý / Phản hồi",
+    },
+    "NKCT": {
+        "title": "Báo cáo nhật ký công trường",
+        "statuses": ["Đã ghi nhận", "Có sự cố", "Đang xử lý", "Đã xử lý"],
+        "done_statuses": ["Đã ghi nhận", "Đã xử lý"],
+        "subject": "Khu vực / Hạng mục",
+        "code_label": "Mã nhật ký *",
+        "issuer_label": "Kỹ sư hiện trường",
+        "assignee_label": "Chỉ huy / Giám sát",
+        "response_label": "Thông tin nhật ký",
+    },
+    "NTCV": {
+        "title": "Hồ sơ nghiệm thu công việc",
+        "statuses": ["Chuẩn bị hồ sơ", "Đã trình nghiệm thu", "Chờ nghiệm thu", "Yêu cầu sửa", "Đạt", "Không đạt", "Đóng"],
+        "done_statuses": ["Đạt", "Không đạt", "Đóng"],
+        "subject": "Hạng mục / Công việc nghiệm thu",
+        "code_label": "Mã hồ sơ NTCV *",
+        "issuer_label": "Người / Đơn vị trình nghiệm thu",
+        "assignee_label": "Người / Đơn vị nghiệm thu",
+        "issue_date_label": "Ngày trình nghiệm thu",
+        "due_date_label": "Ngày dự kiến nghiệm thu",
+        "closed_date_label": "Ngày nghiệm thu / đóng",
+        "response_label": "Kết quả / Ý kiến nghiệm thu",
+    },
+    "NTVL": {
+        "title": "Hồ sơ nghiệm thu vật liệu đầu vào",
+        "statuses": ["Chuẩn bị hồ sơ", "Đã trình", "Chờ kiểm tra", "Yêu cầu bổ sung", "Chấp thuận", "Chấp thuận có điều kiện", "Không chấp thuận", "Đóng"],
+        "done_statuses": ["Chấp thuận", "Chấp thuận có điều kiện", "Không chấp thuận", "Đóng"],
+        "subject": "Vật liệu / Thiết bị nghiệm thu đầu vào",
+        "code_label": "Mã hồ sơ NTVL *",
+        "issuer_label": "Nhà thầu / Người trình",
+        "assignee_label": "Người / Đơn vị kiểm tra",
+        "issue_date_label": "Ngày trình / nhận hồ sơ",
+        "due_date_label": "Ngày dự kiến nghiệm thu",
+        "closed_date_label": "Ngày nghiệm thu / đóng",
+        "response_label": "Kết quả nghiệm thu / Ý kiến",
+    },
+    "KDVT": {
+        "title": "Hồ sơ kiểm định vật tư",
+        "statuses": ["Chuẩn bị hồ sơ", "Đã gửi kiểm định", "Đang kiểm định", "Chờ kết quả", "Đạt", "Không đạt", "Đóng"],
+        "done_statuses": ["Đạt", "Không đạt", "Đóng"],
+        "subject": "Vật tư / Thiết bị kiểm định",
+        "code_label": "Mã hồ sơ kiểm định *",
+        "issuer_label": "Người / Đơn vị gửi kiểm định",
+        "assignee_label": "Đơn vị kiểm định / Người phụ trách",
+        "issue_date_label": "Ngày gửi kiểm định",
+        "due_date_label": "Hạn trả kết quả",
+        "closed_date_label": "Ngày có kết quả / đóng",
+        "response_label": "Kết quả kiểm định / Chứng chỉ",
+    },
+}
+PRIORITIES = ["Thấp", "Trung bình", "Cao", "Khẩn"]
+
+DRAWING_TYPES = {
+    "SHOPDRAWING": "Shopdrawing",
+    "ISSUED_DESIGN": "BV phát hành TKTC",
+    "UPDATED": "BV cập nhật",
+    "AS_BUILT": "BV hoàn công",
+}
+DRAWING_STATUSES = [
+    "Mới nhận", "Đang kiểm tra", "Chờ phản hồi", "Chấp thuận",
+    "Chấp thuận có điều kiện", "Cần sửa", "Thay thế", "Hủy",
+]
+for _approval_doc_type in ("RFA", "RFI"):
+    for _s in ("Đang phê duyệt", "Đang duyệt - Ban điều hành", "Đang duyệt - Tư vấn giám sát", "Đang duyệt - Ban quản lý dự án", "Yêu cầu chỉnh sửa - Ban điều hành", "Yêu cầu chỉnh sửa - Tư vấn giám sát", "Yêu cầu chỉnh sửa - Ban quản lý dự án", "Đã phê duyệt"):
+        if _s not in DOC_CONFIG[_approval_doc_type]["statuses"]:
+            DOC_CONFIG[_approval_doc_type]["statuses"].append(_s)
+for _s in ("Đang phê duyệt", "Đang duyệt - Ban điều hành", "Đang duyệt - Tư vấn giám sát", "Đang duyệt - Ban quản lý dự án", "Yêu cầu chỉnh sửa - Ban điều hành", "Yêu cầu chỉnh sửa - Tư vấn giám sát", "Yêu cầu chỉnh sửa - Ban quản lý dự án", "Đã phê duyệt"):
+    if _s not in DRAWING_STATUSES:
+        DRAWING_STATUSES.append(_s)
+TASK_STATUSES = ["Tất cả", "Chưa bắt đầu", "Đúng tiến độ", "Nhanh tiến độ", "Chậm tiến độ", "Hoàn thành", "Đang thực hiện", "Chưa xác định"]
+
+EXECUTION_CODE_RE = re.compile(r"^[A-Z]+\d+-[A-Z0-9]+-\d{3,}$")
+
+def _normalize_execution_code(value: str) -> str:
+    value = re.sub(r"\s+", "", str(value or "").upper())
+    value = re.sub(r"-+", "-", value)
+    return value.strip("-")
+
+def _valid_execution_code(value: str) -> bool:
+    return bool(EXECUTION_CODE_RE.fullmatch(_normalize_execution_code(value)))
+
+def _tower_from_code(value: str) -> str:
+    code = _normalize_execution_code(value)
+    first = code.split("-", 1)[0] if code else ""
+    return first if first else "KHÁC"
+
+def _discipline_from_code(value: str) -> str:
+    parts = _normalize_execution_code(value).split("-")
+    return parts[1] if len(parts) >= 3 else ""
+
+def _file_filter_match(total_files: int, choice: str) -> bool:
+    if choice == "Có file":
+        return total_files > 0
+    if choice == "Chưa có file":
+        return total_files == 0
+    return True
+
+
+def _ui_note(*args, **kwargs):
+    """V6 mobile: ẩn các dòng ghi chú/caption để giao diện gọn trên điện thoại."""
+    return None
+
+
+def _drive_preview_url(file_id: str, file_name: str = "", open_url: str = "") -> str:
+    """URL xem nhanh trên trình duyệt, không tải bytes qua Streamlit/Render."""
+    fid = str(file_id or "").strip()
+    name = str(file_name or "").lower()
+    if not fid:
+        return str(open_url or "")
+    ext = Path(name).suffix.lower()
+    # PDF/ảnh dùng Drive preview; CAD/BIM dùng Drive view để trình duyệt/Drive tự xử lý.
+    if ext in {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".tif", ".tiff"}:
+        return f"https://drive.google.com/file/d/{fid}/preview"
+    if ext in {".dwg", ".dxf", ".dwf", ".rvt", ".ifc", ".nwd", ".nwc"}:
+        return f"https://drive.google.com/file/d/{fid}/view"
+    return str(open_url or f"https://drive.google.com/file/d/{fid}/view")
+
+
+def _diary_meta(record) -> dict:
+    if not record:
+        return {}
+    raw = str(record["response"] or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {"incident_detail": raw}
+
+
+def _diary_json(**kwargs) -> str:
+    payload = {"schema": "qlda_site_diary_v1", **kwargs}
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+st.set_page_config(page_title="QLDA Xây dựng V6.0 • Render • Drive 2GB", page_icon="🏗️", layout="wide")
+
+st.markdown("""
+<style>
+.block-container {padding-top: 1.1rem; padding-bottom: 2rem;}
+[data-testid="stMetric"] {background: #f7f9fc; border: 1px solid #e5e7eb; padding: 10px 14px; border-radius: 12px;}
+.small-note {font-size: 0.86rem; color: #64748b;}
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_resource
+def get_db(path: str) -> CloudDatabase:
+    return CloudDatabase(path)
+
+
+db = get_db(str(DB_PATH))
+
+
+@st.cache_resource
+def get_legal_repo(path: str) -> LegalRepository:
+    return LegalRepository(path)
+
+
+legal_repo = get_legal_repo(str(DB_PATH))
+if "legal_cache_loaded" not in st.session_state:
+    try:
+        cache_stats = legal_repo.import_cache(LEGAL_CACHE_PATH)
+        st.session_state["legal_cache_stats"] = cache_stats
+    except Exception as exc:
+        st.session_state["legal_cache_error"] = str(exc)
+    st.session_state["legal_cache_loaded"] = True
+
+
+def iso(d) -> str:
+    if not d:
+        return ""
+    if isinstance(d, str):
+        return d
+    return d.isoformat()
+
+
+def parse_date(value: str, fallback: date | None = None) -> date:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except Exception:
+        return fallback or date.today()
+
+
+def rows_to_df(rows) -> pd.DataFrame:
+    return pd.DataFrame([dict(r) for r in rows]) if rows else pd.DataFrame()
+
+
+def uploaded_triplets(files) -> list[tuple[str, str, bytes]]:
+    out = []
+    for f in files or []:
+        out.append((f.name, getattr(f, "type", "") or "application/octet-stream", f.getvalue()))
+    return out
+
+
+def to_excel_bytes(df: pd.DataFrame, sheet_name="Data") -> bytes:
+    buff = io.BytesIO()
+    with pd.ExcelWriter(buff, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+    return buff.getvalue()
+
+
+def project_selector() -> tuple[int | None, list]:
+    projects = db.projects()
+    if not projects:
+        return None, projects
+    labels = {int(p["id"]): f"{p['code']} - {p['name']}" for p in projects}
+    ids = list(labels)
+    current = st.session_state.get("project_id")
+    idx = ids.index(current) if current in ids else 0
+    pid = st.sidebar.selectbox("Dự án đang làm việc", ids, index=idx, format_func=lambda x: labels[x], key="global_project")
+    st.session_state["project_id"] = pid
+    return int(pid), projects
+
+
+def sidebar_project_tools():
+    st.sidebar.markdown("### 🏗️ QLDA Xây dựng V6.0 AI")
+    _ui_note("Render Web Service" if IS_RENDER else "Streamlit / Local")
+    with st.sidebar.expander("+ Tạo dự án"):
+        with st.form("create_project", clear_on_submit=True):
+            code = st.text_input("Mã dự án *")
+            name = st.text_input("Tên dự án *")
+            c1, c2 = st.columns(2)
+            start = c1.date_input("Bắt đầu", value=date.today())
+            end = c2.date_input("Kết thúc", value=date.today() + timedelta(days=365))
+            manager = st.text_input("Quản lý dự án")
+            note = ""
+            submitted = st.form_submit_button("Tạo dự án", type="primary", disabled=not _is_admin())
+            if submitted:
+                if not code.strip() or not name.strip():
+                    st.error("Cần nhập Mã dự án và Tên dự án.")
+                else:
+                    try:
+                        pid = db.add_project(code, name, iso(start), iso(end), manager, note)
+                        st.session_state["project_id"] = pid
+                        st.success("Đã tạo dự án.")
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("Mã dự án đã tồn tại.")
+
+    with st.sidebar.expander("💾 Sao lưu / khôi phục"):
+        if IS_RENDER and str(os.environ.get("QLDA_RENDER_PERSISTENT_DISK", "false")).lower() in {"1", "true", "yes", "on"}:
+            _ui_note("Database đang đặt trên Render Persistent Disk. Vẫn nên tải backup định kỳ.")
+        elif IS_RENDER:
+            st.warning("Render đang chạy KHÔNG có Persistent Disk: SQLite sẽ mất khi service restart/redeploy. File Google Drive không bị ảnh hưởng.")
+        else:
+            _ui_note("Hãy tải backup SQLite định kỳ.")
+        backup = db.backup_bytes()
+        st.download_button("⬇️ Tải backup SQLite", backup, file_name=f"QLDA_backup_{date.today():%Y%m%d}.db", mime="application/octet-stream", width="stretch")
+        restore = st.file_uploader("Khôi phục từ .db", type=["db", "sqlite", "sqlite3"], key="restore_db")
+        if st.button("Khôi phục database", disabled=(restore is None or not _is_admin()), width="stretch"):
+            try:
+                db.restore_bytes(restore.getvalue())
+                st.success("Đã khôi phục database.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+
+def render_schedule(pid: int):
+    project = db.project(pid)
+    st.subheader("📅 Quản lý tiến độ")
+    _ui_note("MPP • WBS • Baseline • Critical Path • Gantt • KH%/TT% • Nhanh/Chậm")
+
+    cdate, csrc = st.columns([1, 3])
+    status_date = cdate.date_input("Ngày báo cáo", value=date.today(), key=f"status_date_{pid}")
+    source = project["source_mpp_path"] or "Chưa nhập MPP"
+    csrc.info(f"Nguồn tiến độ: **{source}**" + (f" — đồng bộ {project['last_sync']}" if project["last_sync"] else ""))
+
+    rows = db.tasks(pid)
+    n = len(rows)
+    delayed = sum(1 for r in rows if r["status"] == "Chậm tiến độ")
+    critical = sum(1 for r in rows if r["critical"])
+    done = sum(1 for r in rows if int(r["actual_progress"] or 0) >= 100)
+    avg = round(sum(float(r["actual_progress"] or 0) for r in rows) / n, 1) if n else 0
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Tổng công việc", n)
+    k2.metric("Chậm tiến độ", delayed)
+    k3.metric("Critical", critical)
+    k4.metric("Hoàn thành", done)
+    k5.metric("Tiến độ TB", f"{avg}%")
+
+    with st.expander("📂 Nhập / đồng bộ Microsoft Project (.mpp)", expanded=not bool(rows)):
+        st.write("Trên Cloud, file MPP được đọc trực tiếp bằng MPXJ; không cần cài Microsoft Project trên server.")
+        mpp = st.file_uploader("Chọn file .mpp", type=["mpp"], key=f"mpp_{pid}")
+        if st.button("Đọc và đồng bộ MPP", type="primary", disabled=(mpp is None or not _can_update()), key=f"syncmpp_{pid}"):
+            suffix = Path(mpp.name).suffix or ".mpp"
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                    tmp.write(mpp.getvalue())
+                    temp_path = tmp.name
+                with st.spinner("Đang đọc Microsoft Project bằng MPXJ..."):
+                    info, tasks = read_mpp(temp_path, status_date=status_date)
+                    db.sync_mpp_tasks(pid, tasks, mpp.name, info)
