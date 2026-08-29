@@ -2,12 +2,11 @@ from pathlib import Path
 import base64
 import gzip
 
-from v613_runtime_patch import install_db_patch, patch_streamlit_source
+from v615_runtime_patch import install_db_patch, patch_streamlit_source
 
-# QLDA V6.13 loader.
+# QLDA V6.15 loader.
 # Base application source remains stored as the validated V6.12 gzip+base64 bundle.
-# V6.13 applies a small runtime patch that fixes revision resubmit/reviewer actions
-# for all online approval types without duplicating the 260+ KB Streamlit source.
+# V6.15 applies the deterministic revision-resubmit patch for all online-approval types.
 _BUNDLE_DIR = Path(__file__).resolve().parent / "v612_source" / "streamlit_app_bundle"
 _parts = sorted(_BUNDLE_DIR.glob("bundle_*.b64"))
 
