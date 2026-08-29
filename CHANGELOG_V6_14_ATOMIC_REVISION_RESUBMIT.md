@@ -1,9 +1,24 @@
 # QLDA V6.14 - Atomic Revision Resubmit
 
-V6.14 sửa lỗi hồ sơ đã bị trả về Nhà thầu, Nhà thầu tải file mới và bấm Lưu nhưng workflow vẫn giữ trạng thái `Chờ Nhà thầu chỉnh sửa`, làm cấp duyệt không thấy nút Phê duyệt.
+## Lỗi được sửa
+Hồ sơ đã bị trả về Nhà thầu, Nhà thầu tải file mới và bấm Lưu nhưng workflow vẫn giữ trạng thái `CONTRACTOR` / `Chờ Nhà thầu chỉnh sửa`, làm cấp duyệt không thấy nút Phê duyệt.
 
-Cơ chế mới: khi bản ghi đang có workflow `current_stage=CONTRACTOR`, thao tác `Lưu hồ sơ/Lưu bản vẽ` thực hiện cập nhật dữ liệu và trình lại đúng `return_stage` trong cùng transaction SQLite. Upload file riêng không tự trình lại; chỉ Save thành công mới chuyển bước. `revision_no` tăng ngay và cấp đã trả hồ sơ được mở lại với trạng thái `Đang chờ duyệt`.
+## Nguyên nhân
+Các bản trước dựa một phần vào UI/rerun và so sánh `updated_at` để phục hồi lần trình lại. Timestamp SQLite chỉ tới giây nên có trường hợp lưu và trả hồ sơ cùng thời điểm, hoặc UI bị ngắt giữa Save và resubmit.
 
-Áp dụng cho RFA, RFI, SHOPDRAWING và AS_BUILT/Bản vẽ hoàn công, bao gồm trường hợp bị trả tại Ban điều hành, TVGS hoặc Ban QLDA.
+## Cơ chế V6.14
+- Khi cập nhật một hồ sơ/bản vẽ đang có workflow ở `current_stage=CONTRACTOR`, `save_document()` / `save_drawing()` thực hiện resubmit ngay trong CÙNG transaction SQLite.
+- Chỉ hành động Lưu mới resubmit; upload file riêng không tự gửi hồ sơ.
+- Workflow quay chính xác về `return_stage` đã trả hồ sơ.
+- Tăng `revision_no` ngay khi Lưu.
+- Mở lại bước duyệt với trạng thái `Đang chờ duyệt`.
+- Giữ lịch sử các bước đã duyệt trước đó.
 
-Bộ kiểm thử workflow liên quan: 62/62 đạt.
+## Áp dụng
+- RFA
+- RFI
+- SHOPDRAWING
+- AS_BUILT / Bản vẽ hoàn công
+
+## Kết quả kiểm thử
+62/62 test liên quan workflow đạt, gồm cả trả hồ sơ tại Ban điều hành, TVGS và Ban QLDA.

@@ -632,6 +632,18 @@ class CloudDatabase:
                     f"UPDATE documents SET {','.join(f'{f}=?' for f in fields)},updated_at=? WHERE id=?",
                     vals + [_now(), doc_id],
                 )
+                # V6.14: hard guarantee for revision workflow. If this record is
+                # waiting for Contractor correction, a successful Save is also the
+                # resubmit action. Do it in the SAME SQLite transaction so the UI
+                # can never save the revision while leaving current_stage=CONTRACTOR.
+                wf = c.execute(
+                    "SELECT * FROM approval_workflows WHERE project_id=? AND record_kind='document' AND subtype=? AND record_id=?",
+                    (project_id, doc_type, doc_id),
+                ).fetchone()
+                if wf and str(wf["current_stage"] or "") == "CONTRACTOR":
+                    self._resubmit_approval_workflow_in_connection(
+                        c, int(wf["id"]), str(wf["submitted_by"] or ""), ""
+                    )
                 return doc_id
             cur = c.execute(
                 f"INSERT INTO documents(project_id,doc_type,{','.join(fields)},created_at,updated_at) VALUES(?,?,{','.join('?' for _ in fields)},?,?)",
@@ -689,6 +701,17 @@ class CloudDatabase:
                     f"UPDATE drawings SET {','.join(f'{f}=?' for f in fields)},updated_at=? WHERE id=?",
                     vals + [_now(), drawing_id],
                 )
+                # V6.14: same hard guarantee for Shopdrawing / As-built and any
+                # drawing type that has an online approval workflow. Upload alone
+                # does not resubmit; the transition happens only when Save succeeds.
+                wf = c.execute(
+                    "SELECT * FROM approval_workflows WHERE project_id=? AND record_kind='drawing' AND subtype=? AND record_id=?",
+                    (project_id, drawing_type, drawing_id),
+                ).fetchone()
+                if wf and str(wf["current_stage"] or "") == "CONTRACTOR":
+                    self._resubmit_approval_workflow_in_connection(
+                        c, int(wf["id"]), str(wf["submitted_by"] or ""), ""
+                    )
                 return drawing_id
             cur = c.execute(
                 f"INSERT INTO drawings(project_id,drawing_type,{','.join(fields)},created_at,updated_at) VALUES(?,?,{','.join('?' for _ in fields)},?,?)",
@@ -867,6 +890,74 @@ class CloudDatabase:
                 "status": wf["overall_status"],
                 "current_stage": wf["current_stage"],
                 "revision_no": int(wf["revision_no"] or 0),
+            }
+
+    def repair_revision_resubmit_if_saved(
+        self,
+        project_id: int,
+        record_kind: str,
+        subtype: str,
+        record_id: int,
+        submitted_by: str = "",
+        submitted_name: str = "",
+    ) -> dict:
+        """V6.13 fail-safe: tự trình lại khi Nhà thầu đã Lưu hồ sơ sau lần bị trả.
+
+        REQUEST_REVISION cập nhật ``workflow.updated_at`` và bản ghi hồ sơ cùng thời điểm.
+        Khi Nhà thầu thực sự bấm Lưu, ``record.updated_at`` sẽ mới hơn trong khi
+        workflow vẫn có thể còn ở CONTRACTOR nếu UI/session bị gián đoạn. Khi đó
+        phương thức này phục hồi đúng ``return_stage`` bằng cùng logic resubmit chuẩn.
+        Chỉ việc upload file lên Drive không thay đổi SQLite ``updated_at``, nên không
+        tự trình lại trước khi Nhà thầu bấm Lưu.
+        """
+        kind = str(record_kind or "").strip().lower()
+        if kind not in {"document", "drawing"}:
+            return {"repaired": False, "reason": "unsupported_kind"}
+        table = "documents" if kind == "document" else "drawings"
+        with self.connect() as c:
+            wf = c.execute(
+                "SELECT * FROM approval_workflows WHERE project_id=? AND record_kind=? AND subtype=? AND record_id=?",
+                (project_id, kind, subtype, record_id),
+            ).fetchone()
+            if not wf:
+                return {"repaired": False, "reason": "no_workflow"}
+            if str(wf["current_stage"] or "") != "CONTRACTOR":
+                return {
+                    "repaired": False,
+                    "reason": "not_waiting_contractor",
+                    "current_stage": str(wf["current_stage"] or ""),
+                }
+            row = c.execute(f"SELECT updated_at FROM {table} WHERE id=?", (record_id,)).fetchone()
+            if not row:
+                return {"repaired": False, "reason": "record_missing"}
+            record_updated = str(row["updated_at"] or "")
+            workflow_updated = str(wf["updated_at"] or "")
+            if not record_updated or record_updated <= workflow_updated:
+                return {
+                    "repaired": False,
+                    "reason": "record_not_saved_after_return",
+                    "record_updated_at": record_updated,
+                    "workflow_updated_at": workflow_updated,
+                }
+
+            actor_email = str(submitted_by or wf["submitted_by"] or "").strip().lower()
+            actor_name = str(submitted_name or "").strip()
+            wid = self._resubmit_approval_workflow_in_connection(
+                c, int(wf["id"]), actor_email, actor_name
+            )
+            repaired_wf = c.execute("SELECT * FROM approval_workflows WHERE id=?", (wid,)).fetchone()
+            step = c.execute(
+                "SELECT * FROM approval_steps WHERE workflow_id=? AND stage_code=?",
+                (wid, repaired_wf["current_stage"]),
+            ).fetchone()
+            return {
+                "repaired": True,
+                "workflow_id": wid,
+                "status": str(repaired_wf["overall_status"] or ""),
+                "current_stage": str(repaired_wf["current_stage"] or ""),
+                "revision_no": int(repaired_wf["revision_no"] or 0),
+                "next_email": str(step["approver_email"] or "") if step else "",
+                "next_name": str(step["approver_name"] or "") if step else "",
             }
 
     def approval_action(self, workflow_id: int, stage_code: str, actor_email: str, action: str, comment: str, actor_name: str = "", actor_role: str = ""):
