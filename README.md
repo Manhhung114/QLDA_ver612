@@ -1,12 +1,16 @@
-# QLDA Xây dựng V6.21
+# QLDA Xây dựng V6.21 WebOpt
 
-Bản Partial Rerun / Lazy Load dành cho Railway.
+Bản web tối ưu cho Railway, giữ nguyên toàn bộ nghiệp vụ V6.21.
 
 Tối ưu chính:
-- chỉ render 01 module chính đang chọn thay vì thực thi toàn bộ nội dung của `st.tabs`;
-- Hồ sơ và Bản vẽ chỉ tải đúng sheet đang chọn;
-- File Google Drive và Phê duyệt online dùng `st.fragment` để giảm full rerun khi lọc file/nhập ý kiến;
-- giữ HTTP connection pool, cache Drive ngắn hạn và SQLite index của V6.20;
-- giữ nguyên RBAC, persistent login, Google Drive và workflow Nhà thầu → Ban điều hành → TVGS → Ban QLDA.
+- Docker multi-stage tạo sẵn source WebOpt; Railway runtime chạy trực tiếp `streamlit_app.py` cuối;
+- lazy navigation + `st.fragment`, chỉ tải module/sheet đang dùng;
+- lazy import Plotly và Văn bản; Gantt tắt mặc định;
+- SQLite WAL/index/cache + batch workflow query để giảm N+1 query;
+- HTTP connection pool + cache đọc ngắn hạn Google Apps Script/Drive;
+- phân trang bảng lớn và chỉ tạo Excel khi người dùng yêu cầu;
+- persistent login giữ qua Refresh/F5;
+- Streamlit production tắt file watcher và giới hạn thread CPU không cần thiết;
+- giữ tương thích workflow Nhà thầu → Ban điều hành → TVGS → Ban QLDA và dữ liệu workflow legacy.
 
-Railway chạy bằng `Dockerfile`; SQLite nên đặt trên persistent volume với `QLDA_DB_PATH=/var/data/qlda_cloud.db`.
+Railway nên dùng 1 replica khi còn SQLite trên persistent volume tại `/var/data/qlda_cloud.db`. Khi cần scale nhiều replica, nên chuyển database sang PostgreSQL trước.
