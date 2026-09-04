@@ -21,15 +21,16 @@ REQUIRED_MARKERS = (
 
 def build() -> Path:
     root = Path(__file__).resolve().parent
-    payload_path = root / "v621_webopt_app.b64"
-    if not payload_path.exists():
-        raise RuntimeError("Missing v621_webopt_app.b64")
+    parts_dir = root / "v621_webopt_source"
+    parts = sorted(parts_dir.glob("part_*.b64"))
+    if len(parts) != 9:
+        raise RuntimeError(f"Incomplete V6.21 WebOpt source: expected 9 parts, found {len(parts)}")
 
     try:
-        encoded = payload_path.read_text(encoding="ascii").strip()
+        encoded = "".join(p.read_text(encoding="ascii").strip() for p in parts)
         source = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
     except Exception as exc:
-        raise RuntimeError(f"Invalid V6.21 WebOpt source bundle: {exc}") from exc
+        raise RuntimeError(f"Invalid V6.21 WebOpt multipart source: {exc}") from exc
 
     missing = [marker for marker in REQUIRED_MARKERS if marker not in source]
     if missing:
