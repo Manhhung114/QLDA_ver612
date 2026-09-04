@@ -19,7 +19,6 @@ REQUIRED_MARKERS = (
     "st.write_stream(",
     "ask_project_stream(",
     "install_ai_streaming()",
-    "Fast Context",
 )
 
 # Chỉ ẩn các chú thích/hướng dẫn tĩnh trên giao diện. Không đụng tới trạng thái,
@@ -64,15 +63,8 @@ def _finalize_source(source: str) -> str:
         1,
     )
 
-    # Chat dự án luôn dùng dữ liệu nội bộ và use_web=False để phản hồi nhanh,
-    # nên không hiển thị nhãn Web Search toàn cục gây hiểu nhầm ở tab Chat.
-    old_ai_status = '''        st.success(f"AI: {provider_name} • Model: {settings.model} • Web Search: {'Bật' if settings.use_web else 'Tắt'} • cấu hình tập trung trên máy chủ")'''
-    new_ai_status = '''        st.success(f"AI: {provider_name} • Model: {settings.model} • Fast Context • cấu hình tập trung trên máy chủ")'''
-    if old_ai_status in source:
-        source = source.replace(old_ai_status, new_ai_status, 1)
-
-    # V6.21 WebOpt AI Streaming: hiển thị câu trả lời theo text delta ngay khi
-    # OpenAI/Gemini gửi về thay vì đợi đủ toàn bộ response rồi mới render.
+    # Giữ nguyên cách trả lời AI ban đầu. Chỉ thay cơ chế render sang streaming để
+    # nội dung xuất hiện dần khi model gửi token về.
     old_chat = '''            try:\n                with st.chat_message("assistant"):\n                    with st.spinner("AI đang phân tích dữ liệu dự án..."):\n                        answer = ai.ask_project(pid, q, previous, date.today(), use_web=False)\n                    st.markdown(answer)\n                st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
     new_chat = '''            try:\n                with st.chat_message("assistant"):\n                    _ai_status = st.empty()\n                    _ai_status.caption("AI đang phân tích dữ liệu dự án...")\n                    answer = st.write_stream(\n                        ai.ask_project_stream(pid, q, previous, date.today(), use_web=False)\n                    )\n                    _ai_status.empty()\n                answer = str(answer or "").strip()\n                if answer:\n                    st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
     if old_chat not in source:
