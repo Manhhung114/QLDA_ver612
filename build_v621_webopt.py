@@ -19,6 +19,7 @@ REQUIRED_MARKERS = (
     "st.write_stream(",
     "ask_project_stream(",
     "install_ai_streaming()",
+    "Fast Context",
 )
 
 # Chỉ ẩn các chú thích/hướng dẫn tĩnh trên giao diện. Không đụng tới trạng thái,
@@ -62,6 +63,13 @@ def _finalize_source(source: str) -> str:
         ai_import + "from ai_streaming_patch import install_ai_streaming\ninstall_ai_streaming()\n",
         1,
     )
+
+    # Chat dự án luôn dùng dữ liệu nội bộ và use_web=False để phản hồi nhanh,
+    # nên không hiển thị nhãn Web Search toàn cục gây hiểu nhầm ở tab Chat.
+    old_ai_status = '''        st.success(f"AI: {provider_name} • Model: {settings.model} • Web Search: {'Bật' if settings.use_web else 'Tắt'} • cấu hình tập trung trên máy chủ")'''
+    new_ai_status = '''        st.success(f"AI: {provider_name} • Model: {settings.model} • Fast Context • cấu hình tập trung trên máy chủ")'''
+    if old_ai_status in source:
+        source = source.replace(old_ai_status, new_ai_status, 1)
 
     # V6.21 WebOpt AI Streaming: hiển thị câu trả lời theo text delta ngay khi
     # OpenAI/Gemini gửi về thay vì đợi đủ toàn bộ response rồi mới render.
