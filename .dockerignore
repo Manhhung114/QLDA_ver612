@@ -1,25 +1,18 @@
-# V6.21 Lazy Load / Partial Rerun: Railway receives runtime only.
+# V6.21 WebOpt — minimal multi-stage Railway build context.
 *
 !Dockerfile
 !.dockerignore
 !requirements.txt
-!VERSION.txt
-!streamlit_app.py
+!build_v621_webopt.py
+!v621_webopt_app.b64
 !cloud_db.py
+!drive_gateway.py
 !mpp_cloud_reader.py
 !legal_documents.py
 !settings_store.py
 !ai_service.py
-!drive_gateway.py
-!v615_runtime_patch.py
-!v616_runtime_patch.py
-!v617_runtime_patch.py
-!v618_runtime_patch.py
-!v619_runtime_patch.py
-!v620_runtime_patch.py
-!v621_runtime_patch.py
 !legal_cache.json
+!v615_runtime_patch.py
+!v621_webopt_runtime.py
 !.streamlit/
 !.streamlit/config.toml
-!v612_source/
-!v612_source/**
