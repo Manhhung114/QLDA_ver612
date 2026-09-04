@@ -1,10 +1,18 @@
-# Deploy V6.21 lên Railway
+# Deploy V6.21 WebOpt lên Railway
 
-1. Railway → Deployments → Redeploy branch `main`.
-2. Giữ persistent volume và `QLDA_DB_PATH=/var/data/qlda_cloud.db`.
-3. Không cần cập nhật Google Apps Script cho thay đổi V6.21.
-4. Sau deploy kiểm tra giao diện hiển thị `Workflow engine: V6.21`.
-5. Menu chính đổi sang bộ chọn `📌 Chức năng`; chỉ module được chọn mới được render.
-6. Trong Hồ sơ/Bản vẽ, chỉ sheet đang chọn được tải dữ liệu.
-7. Thử RFA/RFI/Shopdrawing/Hoàn công: lọc file và nhập ý kiến phê duyệt phải phản hồi nhanh hơn, còn khi bấm Phê duyệt/Yêu cầu chỉnh sửa hệ thống vẫn full rerun để đồng bộ trạng thái.
-8. Refresh/F5 vẫn phải giữ phiên đăng nhập như V6.18+.
+1. Railway → service QLDA → Deployments → Redeploy branch `main`.
+2. Giữ Volume mount tại `/var/data` và biến `QLDA_DB_PATH=/var/data/qlda_cloud.db`.
+3. Không cần thay Google Apps Script / `Code.gs`.
+4. Trong build log phải có dòng `V6.21 WebOpt build OK`.
+5. Sau deploy, RFA/RFI/Shopdrawing/Hoàn công phải hiện `Workflow engine: V6.21 WebOpt`.
+6. F5/Refresh phải giữ đăng nhập.
+7. Mở Tiến độ: Gantt chỉ được tải khi bật `Hiển thị biểu đồ Gantt`.
+8. Sau upload file, cache file tối đa khoảng 5 giây; bấm `Làm mới file / File DB` để đồng bộ ngay.
+
+## Cấu hình Railway khuyến nghị
+- Dùng 1 replica khi còn SQLite trên persistent volume.
+- Không chạy nhiều replica cùng ghi vào một file SQLite.
+- Không đổi hoặc xóa persistent volume khi Redeploy.
+- Nếu số người dùng đồng thời tăng mạnh, chuyển database sang PostgreSQL trước khi scale ngang.
+
+V6.21 WebOpt dùng multi-stage Docker: build stage giải nén và compile source cuối; runtime image chỉ chứa app đã sinh sẵn cùng các module cần thiết, nên các Streamlit rerun không phải xử lý bundle/patch lịch sử.
