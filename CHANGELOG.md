@@ -1,6 +1,7 @@
 # CHANGELOG
 
 ## V6.21 WebOpt — Railway Web Performance Final
+- Bổ sung **Typewriter Stream ở giao diện**: mọi chunk OpenAI/Gemini được chia tiếp thành cụm nhỏ 2 từ (mặc định) trước khi `st.write_stream()`. Vì vậy kể cả Gemini trả một chunk văn bản lớn, nội dung vẫn hiện dần thay vì đổ cả khối một lần. Có thể tinh chỉnh bằng `AI_STREAM_WORDS_PER_CHUNK` và `AI_STREAM_DELAY_MS`.
 - Khôi phục **cách trả lời AI như ban đầu**: dùng lại toàn bộ snapshot dự án từ `ProjectContextBuilder.build()` và tối đa 8 message lịch sử gần nhất để câu trả lời đầy đủ, có đủ tiến độ, hồ sơ, bản vẽ, chi phí, vật tư và pháp lý theo logic gốc.
 - Bỏ cơ chế `Fast Context`, bỏ rút gọn lịch sử 4 message và bỏ đường chọn model nhanh cưỡng bức. Gemini quay lại cơ chế model/fallback/retry ban đầu.
 - Vẫn giữ **streaming**: OpenAI dùng Responses streaming delta, Gemini dùng `generate_content_stream`; Streamlit hiển thị dần bằng `st.write_stream()` thay vì chờ xong toàn bộ câu trả lời.
