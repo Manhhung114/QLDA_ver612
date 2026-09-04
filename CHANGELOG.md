@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## V6.21 WebOpt — Railway Web Performance Final
+- Bỏ các chú thích/hướng dẫn tĩnh trong các sheet để giao diện gọn hơn: không còn dòng `Workflow engine...`, mô tả luồng trả hồ sơ, nhãn `Approval UI / Workflow engine`, hướng dẫn `Nhập đúng Mã...`, nhắc quay lại bấm Làm mới file và chú thích kỹ thuật V6.9.
+- Vẫn giữ các thông báo nghiệp vụ cần thiết: trạng thái đang chờ duyệt, cảnh báo thiếu file, hồ sơ bị trả về, người duyệt, lịch sử và kết quả phê duyệt.
 - Giữ nguyên phiên bản nghiệp vụ V6.21 và toàn bộ luồng phê duyệt online RFA/RFI/Shopdrawing/Hoàn công.
 - Railway dùng multi-stage Docker: source WebOpt cuối được giải nén/kiểm tra/compile ở build stage; runtime image chạy trực tiếp `streamlit_app.py` đã sinh sẵn.
 - Runtime image không còn 12 source bundle và không chạy chuỗi patch V6.16→V6.21 khi Streamlit rerun.
