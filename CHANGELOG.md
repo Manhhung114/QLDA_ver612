@@ -1,6 +1,11 @@
 # CHANGELOG
 
 ## V6.21 WebOpt — Railway Web Performance Final
+- Trợ lý AI bổ sung **Fast Context** để giảm thời gian chờ trước token đầu tiên: câu hỏi tiến độ chỉ gửi top công việc rủi ro; RFI/NCR chỉ nạp hồ sơ liên quan; bản vẽ, chi phí, vật tư và pháp lý chỉ nạp khi câu hỏi cần.
+- Lịch sử chat gửi AI giảm từ 8 xuống 4 message gần nhất để giảm input token và tăng tốc phản hồi.
+- Gemini `auto` ưu tiên đường model nhanh trực tiếp (`gemini-2.5-flash-lite` → `gemini-2.5-flash`) và chỉ gọi discovery `models.list()` khi các model nhanh không dùng được.
+- Streaming Gemini giảm retry mặc định xuống 2 lần với backoff ngắn hơn để tránh đứng lâu ở trạng thái “AI đang phân tích...”. Có thể override bằng `GEMINI_STREAM_RETRY_ATTEMPTS`, `GEMINI_STREAM_RETRY_BASE_SECONDS`, `GEMINI_FAST_MODEL`.
+- Chat dự án luôn dùng `use_web=False`; nhãn trạng thái AI trên giao diện đổi thành `Fast Context` để không gây hiểu nhầm rằng Web Search đang làm chậm chat nội bộ.
 - Trợ lý AI Chat chuyển sang streaming: OpenAI dùng Responses streaming delta, Gemini dùng `generate_content_stream`; Streamlit hiển thị dần bằng `st.write_stream()` thay vì chờ xong toàn bộ câu trả lời.
 - Nếu SDK OpenAI cũ không có streaming API, giao diện vẫn phát dần theo từng cụm từ thay vì đổ cả khối một lần.
 - Bỏ các chú thích/hướng dẫn tĩnh trong các sheet để giao diện gọn hơn: không còn dòng `Workflow engine...`, mô tả luồng trả hồ sơ, nhãn `Approval UI / Workflow engine`, hướng dẫn `Nhập đúng Mã...`, nhắc quay lại bấm Làm mới file và chú thích kỹ thuật V6.9.
