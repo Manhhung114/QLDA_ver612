@@ -1,15 +1,28 @@
+from __future__ import annotations
+
 from pathlib import Path
 
-from v621_runtime_patch import compiled_streamlit_app, install_db_patch
+import streamlit as st
 
-# QLDA V6.21 Railway loader.
-# Bundle được decode/patch/compile một lần mỗi Railway process; V6.21 bổ sung
-# lazy navigation và st.fragment để giảm rerun toàn bộ ứng dụng.
-_BUNDLE_DIR = Path(__file__).resolve().parent / "v612_source" / "streamlit_app_bundle"
+from build_v621_webopt import build as _build_webopt
 
-install_db_patch()
+
+# Local/dev entrypoint. Railway does not execute this loader: the Docker builder
+# generates the final app once and copies dist/streamlit_app.py directly into the
+# runtime image. This keeps production reruns free of bundle decode/patch work.
+_DIST = Path(__file__).resolve().parent / "dist" / "streamlit_app.py"
+if not _DIST.exists():
+    _build_webopt()
+
+
+@st.cache_resource(show_spinner=False)
+def _compiled_webopt(path: str, mtime_ns: int):
+    source = Path(path).read_text(encoding="utf-8")
+    return compile(source, path, "exec")
+
+
 exec(
-    compiled_streamlit_app(str(_BUNDLE_DIR), str(Path(__file__).resolve())),
+    _compiled_webopt(str(_DIST), _DIST.stat().st_mtime_ns),
     globals(),
     globals(),
 )
