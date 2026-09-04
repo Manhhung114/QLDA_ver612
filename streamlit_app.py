@@ -1,11 +1,10 @@
 from pathlib import Path
 
-from v620_runtime_patch import compiled_streamlit_app, install_db_patch
+from v621_runtime_patch import compiled_streamlit_app, install_db_patch
 
-# QLDA V6.20 small Railway loader.
-# The source bundle is decoded/patched/compiled ONCE per Railway process by
-# v620_runtime_patch.compiled_streamlit_app(). Subsequent Streamlit reruns reuse
-# the cached code object instead of repeating Base64 + gzip + patch + compile.
+# QLDA V6.21 Railway loader.
+# Bundle được decode/patch/compile một lần mỗi Railway process; V6.21 bổ sung
+# lazy navigation và st.fragment để giảm rerun toàn bộ ứng dụng.
 _BUNDLE_DIR = Path(__file__).resolve().parent / "v612_source" / "streamlit_app_bundle"
 
 install_db_patch()
