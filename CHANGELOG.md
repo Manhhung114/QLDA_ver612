@@ -1,6 +1,8 @@
 # CHANGELOG
 
 ## V6.21 WebOpt — Railway Web Performance Final
+- Trợ lý AI Chat chuyển sang streaming: OpenAI dùng Responses streaming delta, Gemini dùng `generate_content_stream`; Streamlit hiển thị dần bằng `st.write_stream()` thay vì chờ xong toàn bộ câu trả lời.
+- Nếu SDK OpenAI cũ không có streaming API, giao diện vẫn phát dần theo từng cụm từ thay vì đổ cả khối một lần.
 - Bỏ các chú thích/hướng dẫn tĩnh trong các sheet để giao diện gọn hơn: không còn dòng `Workflow engine...`, mô tả luồng trả hồ sơ, nhãn `Approval UI / Workflow engine`, hướng dẫn `Nhập đúng Mã...`, nhắc quay lại bấm Làm mới file và chú thích kỹ thuật V6.9.
 - Vẫn giữ các thông báo nghiệp vụ cần thiết: trạng thái đang chờ duyệt, cảnh báo thiếu file, hồ sơ bị trả về, người duyệt, lịch sử và kết quả phê duyệt.
 - Giữ nguyên phiên bản nghiệp vụ V6.21 và toàn bộ luồng phê duyệt online RFA/RFI/Shopdrawing/Hoàn công.
