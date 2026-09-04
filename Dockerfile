@@ -38,7 +38,7 @@ RUN pip install --prefer-binary -r requirements.txt
 # Build source parts stay in the builder stage and are not copied into runtime.
 COPY --from=webopt-builder /src/dist/streamlit_app.py ./streamlit_app.py
 COPY cloud_db.py drive_gateway.py mpp_cloud_reader.py legal_documents.py settings_store.py ai_service.py legal_cache.json ./
-COPY v615_runtime_patch.py v621_webopt_runtime.py ./
+COPY v615_runtime_patch.py v621_webopt_runtime.py ai_streaming_patch.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
 
 RUN python -m compileall -q /app \
