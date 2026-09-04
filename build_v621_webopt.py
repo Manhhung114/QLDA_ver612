@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 REQUIRED_MARKERS = (
-    "Workflow engine: **V6.21 WebOpt**",
+    "QLDA Xây dựng V6.21 WebOpt",
     "from v621_webopt_runtime import install_runtime",
     "approval_workflows_for_records",
     "@st.fragment\ndef _render_online_approval",
@@ -18,13 +18,51 @@ REQUIRED_MARKERS = (
     "Tạo Excel tiến độ",
 )
 
+# Chỉ ẩn các chú thích/hướng dẫn tĩnh trên giao diện. Không đụng tới trạng thái,
+# cảnh báo nghiệp vụ, workflow, quyền, database hoặc Google Drive.
+HIDDEN_UI_NOTE_MARKERS = (
+    "Sau khi tải file lớn xong, quay lại app",
+    "Sau khi tải xong, quay lại app và bấm Làm mới file / File DB",
+    "File lớn hơn giới hạn trên: dùng 'Mở trình tải file ở tab riêng'",
+    "Workflow engine: **V6.21 WebOpt** • Nhà thầu trình",
+    "Nếu một cấp yêu cầu chỉnh sửa: hồ sơ quay về Nhà thầu",
+    "V6.9 không dùng nút Trình lại riêng",
+    "Approval UI / Workflow engine: V6.21",
+    "Nhập đúng Mã hồ sơ và Nội dung trình duyệt trước khi đính kèm file",
+    "Nhập đúng Mã bản vẽ và Nội dung/Tên bản vẽ trước khi đính kèm file",
+)
+
+FORBIDDEN_UI_NOTE_MARKERS = (
+    "Workflow engine: **V6.21 WebOpt** • Nhà thầu trình",
+    "Nếu một cấp yêu cầu chỉnh sửa: hồ sơ quay về Nhà thầu",
+    "Approval UI / Workflow engine: V6.21 WebOpt",
+    "V6.9 không dùng nút Trình lại riêng",
+    "Nhập đúng Mã hồ sơ và Nội dung trình duyệt trước khi đính kèm file",
+    "Nhập đúng Mã bản vẽ và Nội dung/Tên bản vẽ trước khi đính kèm file",
+    "Sau khi tải xong, quay lại app và bấm Làm mới file / File DB",
+    "Sau khi tải file lớn xong, quay lại app",
+    "File lớn hơn giới hạn trên: dùng 'Mở trình tải file ở tab riêng'",
+)
+
 
 def _finalize_source(source: str) -> str:
     """Apply final production-only WebOpt normalization at Docker build time."""
-    # Keep one clear build/version label everywhere the user can see it.
     source = source.replace("QLDA Xây dựng V6.0", "QLDA Xây dựng V6.21 WebOpt")
     source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.21 WebOpt**")
     source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.21 WebOpt")
+
+    # Loại các dòng chú thích tĩnh để sheet gọn hơn, đặc biệt trên điện thoại.
+    source = "\n".join(
+        line for line in source.splitlines()
+        if not any(marker in line for marker in HIDDEN_UI_NOTE_MARKERS)
+    ) + "\n"
+
+    # Hai caption "Nhập đúng Mã..." là body duy nhất của if not attach_ready.
+    # Sau khi bỏ caption phải bỏ luôn if rỗng để source vẫn hợp lệ.
+    source = source.replace(
+        "        if not attach_ready:\n        is_revision_return =",
+        "        is_revision_return =",
+    )
 
     # Historical bundle/runtime loader must never leak into the Railway runtime app.
     forbidden = (
@@ -36,6 +74,10 @@ def _finalize_source(source: str) -> str:
     leaked = [x for x in forbidden if x in source]
     if leaked:
         raise RuntimeError(f"Historical runtime loader leaked into final WebOpt app: {leaked}")
+
+    leaked_notes = [x for x in FORBIDDEN_UI_NOTE_MARKERS if x in source]
+    if leaked_notes:
+        raise RuntimeError(f"UI note cleanup incomplete: {leaked_notes}")
     return source
 
 
