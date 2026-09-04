@@ -4,7 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /src
-COPY build_v621_webopt.py v621_webopt_app.b64 ./
+COPY build_v621_webopt.py ./
+COPY v621_webopt_source ./v621_webopt_source
 RUN python build_v621_webopt.py \
     && python -m py_compile dist/streamlit_app.py
 
@@ -34,7 +35,7 @@ COPY requirements.txt ./requirements.txt
 RUN pip install --prefer-binary -r requirements.txt
 
 # Final Railway image contains only the generated WebOpt app and runtime modules.
-# Historical UI patch chain and source bundles stay out of the runtime image.
+# Build source parts stay in the builder stage and are not copied into runtime.
 COPY --from=webopt-builder /src/dist/streamlit_app.py ./streamlit_app.py
 COPY cloud_db.py drive_gateway.py mpp_cloud_reader.py legal_documents.py settings_store.py ai_service.py legal_cache.json ./
 COPY v615_runtime_patch.py v621_webopt_runtime.py ./
