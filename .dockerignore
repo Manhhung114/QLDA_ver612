@@ -12,6 +12,7 @@
 !legal_documents.py
 !settings_store.py
 !ai_service.py
+!ai_streaming_patch.py
 !legal_cache.json
 !v615_runtime_patch.py
 !v621_webopt_runtime.py
