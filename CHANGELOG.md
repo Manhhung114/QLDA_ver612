@@ -1,10 +1,12 @@
-# Changelog
+# CHANGELOG
 
-## V6.19
-- Tinh gọn repository và Docker build cho Railway.
-- Gom lịch sử thay đổi cũ vào Git history thay vì nhiều file `CHANGELOG_V*` ở root.
-- Docker build context chỉ chứa runtime cần thiết.
-- Bỏ `build-essential`; ưu tiên binary wheels khi cài thư viện Python.
-- Giữ V6.18: phiên đăng nhập bền qua Refresh/F5.
-- Giữ V6.17: tự trình lại workflow khi có file cập nhật sau lần trả hồ sơ.
-- Giữ luồng phê duyệt online RFA, RFI, Shopdrawing và Bản vẽ hoàn công.
+## V6.20 — Runtime Fast Path
+- Bundle Streamlit chỉ decode/gzip/patch/compile **một lần cho mỗi Railway process**; các `st.rerun()` sau tái sử dụng code object đã compile.
+- Drive Gateway dùng `requests.Session` + HTTP connection pool theo phiên người dùng.
+- Cache đọc ngắn hạn: danh sách file 3 giây, số lượng file 5 giây, danh sách người duyệt 30 giây, thông tin root 60 giây.
+- Nút `Làm mới file / File DB` xóa cache file ngay lập tức.
+- Bổ sung index SQLite cho tasks, documents, drawings, attachments và approval workflow.
+- Giữ nguyên RBAC, persistent login và toàn bộ logic phê duyệt online V6.17–V6.19.
+
+## V6.19 — Lean Railway
+- Dọn build context và tài liệu cũ khỏi Railway image.
