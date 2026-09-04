@@ -19,6 +19,26 @@ REQUIRED_MARKERS = (
 )
 
 
+def _finalize_source(source: str) -> str:
+    """Apply final production-only WebOpt normalization at Docker build time."""
+    # Keep one clear build/version label everywhere the user can see it.
+    source = source.replace("QLDA Xây dựng V6.0", "QLDA Xây dựng V6.21 WebOpt")
+    source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.21 WebOpt**")
+    source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.21 WebOpt")
+
+    # Historical bundle/runtime loader must never leak into the Railway runtime app.
+    forbidden = (
+        "from v621_runtime_patch import",
+        "compiled_streamlit_app(",
+        "bundle_01.b64",
+        "v612_source/streamlit_app_bundle",
+    )
+    leaked = [x for x in forbidden if x in source]
+    if leaked:
+        raise RuntimeError(f"Historical runtime loader leaked into final WebOpt app: {leaked}")
+    return source
+
+
 def build() -> Path:
     root = Path(__file__).resolve().parent
     parts_dir = root / "v621_webopt_source"
@@ -32,17 +52,16 @@ def build() -> Path:
     except Exception as exc:
         raise RuntimeError(f"Invalid V6.21 WebOpt multipart source: {exc}") from exc
 
+    source = _finalize_source(source)
     missing = [marker for marker in REQUIRED_MARKERS if marker not in source]
     if missing:
         raise RuntimeError(f"V6.21 WebOpt markers missing: {missing}")
-    if "from v621_runtime_patch import" in source:
-        raise RuntimeError("Historical V6.21 runtime patch leaked into final app")
 
     out = root / "dist" / "streamlit_app.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(source, encoding="utf-8")
     compile(source, str(out), "exec")
-    print(f"V6.21 WebOpt build OK: {len(source)} chars -> {out}")
+    print(f"V6.21 WebOpt production build OK: {len(source)} chars -> {out}")
     return out
 
 
