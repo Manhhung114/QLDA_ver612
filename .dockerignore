@@ -1,4 +1,4 @@
-# V6.20 Runtime Fast Path: Railway receives runtime only.
+# V6.21 Lazy Load / Partial Rerun: Railway receives runtime only.
 *
 !Dockerfile
 !.dockerignore
@@ -17,6 +17,7 @@
 !v618_runtime_patch.py
 !v619_runtime_patch.py
 !v620_runtime_patch.py
+!v621_runtime_patch.py
 !legal_cache.json
 !.streamlit/
 !.streamlit/config.toml
