@@ -1,10 +1,8 @@
-# Deploy Railway V6.19
+# Deploy V6.20 lên Railway
 
-1. Railway → service QLDA → Deployments.
-2. Redeploy commit V6.19.
-3. Kiểm tra build log: Docker dùng `python:3.12-slim`, cài `requirements.txt`, không cài `build-essential`.
-4. Mở app và xác nhận `Workflow engine: V6.19`.
-5. Thử Refresh/F5: không bị thoát đăng nhập khi token còn hạn.
-6. Kiểm tra một hồ sơ phê duyệt online để xác nhận workflow RFA/RFI/Shopdrawing/Hoàn công vẫn hoạt động.
-
-Không cần deploy lại Google Apps Script cho thay đổi tinh gọn V6.19.
+1. Railway → Deployments → Redeploy branch `main`.
+2. Giữ persistent volume và `QLDA_DB_PATH=/var/data/qlda_cloud.db`.
+3. Không cần cập nhật lại Google Apps Script cho thay đổi hiệu năng này.
+4. Sau deploy kiểm tra giao diện hiển thị `Workflow engine: V6.20`.
+5. Thử: đăng nhập → mở RFA/RFI/Shopdrawing/Hoàn công → chuyển qua lại sheet → Refresh; phiên đăng nhập vẫn phải được giữ.
+6. Khi vừa tải file ở tab Apps Script, có thể bấm `Làm mới file / File DB` để bỏ cache 3–5 giây ngay lập tức.
