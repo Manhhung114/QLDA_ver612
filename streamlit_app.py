@@ -2,11 +2,10 @@ from pathlib import Path
 import base64
 import gzip
 
-from v618_runtime_patch import install_db_patch, patch_streamlit_source
+from v619_runtime_patch import install_db_patch, patch_streamlit_source
 
-# QLDA V6.18 loader.
-# V6.18 keeps V6.17 approval behavior and restores the signed Apps Script
-# login token from a browser cookie after F5/Refresh while the token is valid.
+# QLDA V6.19 - Lean Railway loader.
+# V6.19 giữ nguyên chức năng V6.18/V6.17 nhưng tinh gọn repository và Docker build context.
 _BUNDLE_DIR = Path(__file__).resolve().parent / "v612_source" / "streamlit_app_bundle"
 _parts = sorted(_BUNDLE_DIR.glob("bundle_*.b64"))
 
