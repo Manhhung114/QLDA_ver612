@@ -16,6 +16,9 @@ REQUIRED_MARKERS = (
     "def _render_excel_export",
     "class _LazyPlotlyExpress",
     "Tạo Excel tiến độ",
+    "st.write_stream(",
+    "ask_project_stream(",
+    "install_ai_streaming()",
 )
 
 # Chỉ ẩn các chú thích/hướng dẫn tĩnh trên giao diện. Không đụng tới trạng thái,
@@ -50,6 +53,23 @@ def _finalize_source(source: str) -> str:
     source = source.replace("QLDA Xây dựng V6.0", "QLDA Xây dựng V6.21 WebOpt")
     source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.21 WebOpt**")
     source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.21 WebOpt")
+
+    ai_import = "from ai_service import (AIServiceError, AISettings, OpenAIProjectAssistant, GeminiSettings, GeminiProjectAssistant, ProjectContextBuilder)\n"
+    if ai_import not in source:
+        raise RuntimeError("V6.21 AI import anchor missing")
+    source = source.replace(
+        ai_import,
+        ai_import + "from ai_streaming_patch import install_ai_streaming\ninstall_ai_streaming()\n",
+        1,
+    )
+
+    # V6.21 WebOpt AI Streaming: hiển thị câu trả lời theo text delta ngay khi
+    # OpenAI/Gemini gửi về thay vì đợi đủ toàn bộ response rồi mới render.
+    old_chat = '''            try:\n                with st.chat_message("assistant"):\n                    with st.spinner("AI đang phân tích dữ liệu dự án..."):\n                        answer = ai.ask_project(pid, q, previous, date.today(), use_web=False)\n                    st.markdown(answer)\n                st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
+    new_chat = '''            try:\n                with st.chat_message("assistant"):\n                    _ai_status = st.empty()\n                    _ai_status.caption("AI đang phân tích dữ liệu dự án...")\n                    answer = st.write_stream(\n                        ai.ask_project_stream(pid, q, previous, date.today(), use_web=False)\n                    )\n                    _ai_status.empty()\n                answer = str(answer or "").strip()\n                if answer:\n                    st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
+    if old_chat not in source:
+        raise RuntimeError("V6.21 AI streaming chat anchor missing")
+    source = source.replace(old_chat, new_chat, 1)
 
     # Loại các dòng chú thích tĩnh để sheet gọn hơn, đặc biệt trên điện thoại.
     source = "\n".join(
