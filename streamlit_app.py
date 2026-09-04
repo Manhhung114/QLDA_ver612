@@ -2,11 +2,11 @@ from pathlib import Path
 import base64
 import gzip
 
-from v617_runtime_patch import install_db_patch, patch_streamlit_source
+from v618_runtime_patch import install_db_patch, patch_streamlit_source
 
-# QLDA V6.17 loader.
-# Base application source remains stored as the validated V6.12 gzip+base64 bundle.
-# V6.17 layers Drive-file revision auto-resubmit on top of V6.16 role/session recovery.
+# QLDA V6.18 loader.
+# V6.18 keeps V6.17 approval behavior and restores the signed Apps Script
+# login token from a browser cookie after F5/Refresh while the token is valid.
 _BUNDLE_DIR = Path(__file__).resolve().parent / "v612_source" / "streamlit_app_bundle"
 _parts = sorted(_BUNDLE_DIR.glob("bundle_*.b64"))
 
