@@ -2,11 +2,11 @@ from pathlib import Path
 import base64
 import gzip
 
-from v616_runtime_patch import install_db_patch, patch_streamlit_source
+from v617_runtime_patch import install_db_patch, patch_streamlit_source
 
-# QLDA V6.16 loader.
+# QLDA V6.17 loader.
 # Base application source remains stored as the validated V6.12 gzip+base64 bundle.
-# V6.16 layers role/session workflow recovery on top of V6.15 deterministic resubmit.
+# V6.17 layers Drive-file revision auto-resubmit on top of V6.16 role/session recovery.
 _BUNDLE_DIR = Path(__file__).resolve().parent / "v612_source" / "streamlit_app_bundle"
 _parts = sorted(_BUNDLE_DIR.glob("bundle_*.b64"))
 
