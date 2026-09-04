@@ -4,7 +4,8 @@
 !.dockerignore
 !requirements.txt
 !build_v621_webopt.py
-!v621_webopt_app.b64
+!v621_webopt_source/
+!v621_webopt_source/**
 !cloud_db.py
 !drive_gateway.py
 !mpp_cloud_reader.py
