@@ -6,6 +6,9 @@ on:
     paths:
       - 'streamlit_app.py'
       - 'build_v621_webopt.py'
+      - 'v622_auth_refresh_v4.py'
+      - 'requirements.txt'
+      - 'Dockerfile'
       - 'postgres_backend_v622.py'
       - 'streamlit_secrets_v622.py'
       - 'settings_store.py'
@@ -29,11 +32,53 @@ jobs:
           python-version: '3.12'
       - name: Compile V6.22 support modules
         run: |
-          python -m py_compile streamlit_app.py build_v621_webopt.py postgres_backend_v622.py streamlit_secrets_v622.py settings_store.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
-      - name: Rebuild and compile final Streamlit app
+          python -m py_compile streamlit_app.py build_v621_webopt.py v622_auth_refresh_v4.py postgres_backend_v622.py streamlit_secrets_v622.py settings_store.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
+      - name: Rebuild and validate exact F5 auth V4 source
         run: |
           python build_v621_webopt.py
-          python -m py_compile dist/streamlit_app.py
+          python - <<'PY'
+          from pathlib import Path
+          from v622_auth_refresh_v4 import PATCH_MARKER, patch_auth_refresh_v4
+          p = Path('dist/streamlit_app.py')
+          text = patch_auth_refresh_v4(p.read_text(encoding='utf-8'))
+          region = text[text.index(PATCH_MARKER):text.index('def _gateway_session_token()')]
+          assert 'streamlit_cookies_controller' in region
+          assert 'st.stop()' not in region
+          assert 'controller.set(' in region
+          assert 'controller.remove(' in region
+          assert 'max_age=float(_QLDA_AUTH_COOKIE_MAX_AGE)' in region
+          assert 'same_site="lax"' in region
+          assert 'time.sleep(0.50)' in text
+          assert 'time.sleep(0.35)' in text
+          assert 'token = _browser_session_cookie()' in text
+          assert '_qlda_cookie_written_for_token' in text
+          compile(text, 'dist/streamlit_app_v4.py', 'exec')
+          Path('dist/streamlit_app_v4.py').write_text(text, encoding='utf-8')
+          print('V6.22 F5 auth V4 source: OK')
+          PY
+      - name: Verify cookie controller runtime API
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'streamlit>=1.48,<2' 'streamlit-cookies-controller==0.0.4'
+          python - <<'PY'
+          import inspect
+          from streamlit_cookies_controller import CookieController
+          params = inspect.signature(CookieController.set).parameters
+          for name in ('path','max_age','secure','same_site'):
+              assert name in params
+          assert hasattr(CookieController, 'remove')
+          print('CookieController runtime API: OK')
+          PY
+      - name: Verify fail-open initial render invariant
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('dist/streamlit_app_v4.py').read_text(encoding='utf-8')
+          region = text[text.index('# V6.22 AUTH REFRESH V4'):text.index('def _gateway_session_token()')]
+          imports = [line for line in region.splitlines() if 'from streamlit_cookies_controller import' in line]
+          assert imports and all(line.startswith('    ') for line in imports), imports
+          assert 'st.stop()' not in region
+          print('Fail-open initial render invariant: OK')
+          PY
       - name: Verify Gemini secrets bridge order
         run: |
           python - <<'PY'
@@ -48,3 +93,5 @@ jobs:
           assert a < b < c < d < e < f
           print('V6.22 Streamlit secrets/Gemini bootstrap order: OK')
           PY
+      - name: Build production Docker image
+        run: docker build -t qlda-v622-auth-v4 .
