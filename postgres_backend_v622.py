@@ -700,7 +700,7 @@ class PostgresCloudDatabase(_SQLITE_CLOUD_DATABASE):
         return _portable_sqlite_backup(self.database_url)
 
     def restore_bytes(self, data: bytes):
-        # Existing Settings > Restore DB is the migration path from Railway SQLite.
+        # Existing Settings > Restore DB is the migration path from SQLite legacy.
         stats = import_sqlite_bytes(bytes(data or b""), replace=True, url=self.database_url)
         self.create_tables()
         self.migrate()

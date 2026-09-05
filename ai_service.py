@@ -111,7 +111,7 @@ def classify_openai_error(exc) -> AIErrorInfo:
         return AIErrorInfo(
             "invalid_api_key", "❌ API key không hợp lệ hoặc đã bị thu hồi",
             "Không thể xác thực với OpenAI API.",
-            "Kiểm tra OPENAI_API_KEY trong biến môi trường máy chủ (Railway/Render/Streamlit Secrets). Đảm bảo key không có khoảng trắng thừa và chưa bị revoke.",
+            "Kiểm tra OPENAI_API_KEY trong biến môi trường máy chủ (Streamlit Secrets). Đảm bảo key không có khoảng trắng thừa và chưa bị revoke.",
             False, status or 401,
         )
 
@@ -244,7 +244,7 @@ def classify_gemini_error(exc) -> AIErrorInfo:
         return AIErrorInfo(
             "invalid_api_key", "❌ Gemini API key không hợp lệ hoặc chưa có quyền",
             "Không thể xác thực hoặc Project/API key chưa có quyền dùng Gemini API.",
-            "Kiểm tra GEMINI_API_KEY trong Render/Railway/Streamlit Secrets và quyền API key trên Google AI Studio.",
+            "Kiểm tra GEMINI_API_KEY trong Streamlit Secrets và quyền API key trên Google AI Studio.",
             False, status or 403,
         )
     if status == 429 or "resource_exhausted" in low or "quota" in low or "rate limit" in low:
@@ -600,7 +600,7 @@ class OpenAIProjectAssistant:
     def _client(self):
         key = (self.settings.api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
         if not key:
-            raise AIServiceError("Chưa có OPENAI_API_KEY trên máy chủ. Hãy cấu hình trong Railway/Render Environment Variables hoặc Streamlit Secrets.")
+            raise AIServiceError("Chưa có OPENAI_API_KEY trên máy chủ. Hãy cấu hình trong Streamlit Community Cloud Secrets.")
         try:
             from openai import OpenAI
         except Exception as exc:
@@ -749,7 +749,7 @@ class GeminiProjectAssistant(OpenAIProjectAssistant):
     def _client(self):
         key = (self.settings.api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
         if not key:
-            raise AIServiceError("Chưa có GEMINI_API_KEY trên máy chủ. Hãy cấu hình trong Railway/Render Environment Variables hoặc Streamlit Secrets.")
+            raise AIServiceError("Chưa có GEMINI_API_KEY trên máy chủ. Hãy cấu hình trong Streamlit Community Cloud Secrets.")
         try:
             from google import genai
         except Exception as exc:

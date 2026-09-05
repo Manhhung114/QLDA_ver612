@@ -294,7 +294,7 @@ function createUploadTicket_(body) {
   // vừa tạo ticket nhưng GET uploader ở invocation khác lại không tìm thấy ticket.
   const ticket = makeSignedUploadTicket_(meta);
 
-  // Luôn ưu tiên đúng URL /exec mà Python/Railway/Render đang cấu hình.
+  // Luôn ưu tiên đúng URL /exec mà Python/Streamlit Community Cloud đang cấu hình.
   // Điều này tránh ScriptApp.getService().getUrl() trỏ sang deployment khác khi
   // một project Apps Script có nhiều deployment/version.
   const configuredBase = String(body.webapp_url || '').trim();
