@@ -1,4 +1,4 @@
-name: Auth Source Debug
+name: Auth V4 Debug Check
 
 on:
   push:
@@ -6,37 +6,61 @@ on:
   workflow_dispatch:
 
 jobs:
-  inspect-auth-source:
+  validate-auth-v4:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build final V6.22 source
-        run: python build_v621_webopt.py
-      - name: Print auth helpers
+      - name: Compile patch and build V6.22 source
+        run: |
+          python -m py_compile v622_auth_refresh_v4.py
+          python build_v621_webopt.py
+      - name: Apply and compile exact auth V4 patch
         run: |
           python - <<'PY'
           from pathlib import Path
-          text = Path('dist/streamlit_app.py').read_text(encoding='utf-8')
-          needles = [
-              '_QLDA_AUTH_COOKIE',
-              'def _browser_session_cookie',
-              'def _gateway_session_token',
-              'def _write_browser_session_cookie',
-              'def _clear_browser_session_cookie',
-              '_qlda_cookie_written_for_token',
-              '_write_browser_session_cookie(token)',
-              '_write_browser_session_cookie(live_token)',
-          ]
-          print('SOURCE_LENGTH', len(text))
-          for needle in needles:
-              print('\n===== NEEDLE:', needle, '=====')
-              pos = text.find(needle)
-              print('POS', pos)
-              if pos >= 0:
-                  start = max(0, pos - 1800)
-                  end = min(len(text), pos + 3600)
-                  print(text[start:end])
+          from v622_auth_refresh_v4 import PATCH_MARKER, patch_auth_refresh_v4
+          src = Path('dist/streamlit_app.py').read_text(encoding='utf-8')
+          text = patch_auth_refresh_v4(src)
+          assert PATCH_MARKER in text
+          region = text[text.index(PATCH_MARKER):text.index('def _gateway_session_token()')]
+          assert 'streamlit_cookies_controller' in region
+          assert 'st.stop()' not in region
+          assert 'controller.set(_QLDA_AUTH_COOKIE, value)' in region
+          assert 'controller.remove(_QLDA_AUTH_COOKIE)' in region
+          assert 'time.sleep(0.50)' in text
+          assert 'time.sleep(0.35)' in text
+          assert 'token = _browser_session_cookie()' in text
+          assert '_qlda_cookie_written_for_token' in text
+          compile(text, 'dist/streamlit_app_v4.py', 'exec')
+          Path('dist/streamlit_app_v4.py').write_text(text, encoding='utf-8')
+          print('Exact V6.22 auth V4 patch compile: OK')
+          PY
+      - name: Verify cookie controller runtime API
+        run: |
+          python -m pip install --disable-pip-version-check --quiet 'streamlit>=1.48,<2' 'streamlit-cookies-controller==0.0.4'
+          python - <<'PY'
+          import inspect
+          import streamlit
+          from streamlit_cookies_controller import CookieController
+          print('Streamlit', streamlit.__version__)
+          print('CookieController', inspect.signature(CookieController))
+          print('set', inspect.signature(CookieController.set))
+          print('remove', inspect.signature(CookieController.remove))
+          assert hasattr(CookieController, 'set')
+          assert hasattr(CookieController, 'remove')
+          print('CookieController runtime API: OK')
+          PY
+      - name: Verify no auth component runs on initial import path
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('dist/streamlit_app_v4.py').read_text(encoding='utf-8')
+          # Component import stays inside the writer helper, so ordinary app start
+          # and anonymous login screen cannot fail just because cookie write fails.
+          before = text[:text.index('def _write_browser_session_cookie(token: str) -> None:')]
+          assert 'streamlit_cookies_controller' not in before
+          print('Fail-open initial render invariant: OK')
           PY
