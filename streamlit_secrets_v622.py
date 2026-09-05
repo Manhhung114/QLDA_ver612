@@ -37,11 +37,11 @@ def _secret_value(name: str) -> str:
 
 
 def apply_streamlit_secrets_to_env(keys: Iterable[str] = _SECRET_KEYS) -> dict[str, bool]:
-    """Bridge Streamlit Community Cloud root secrets to legacy env-based code.
+    """Bridge Streamlit Community Cloud root secrets to env-based modules.
 
-    Earlier QLDA versions ran on Railway/Render and most runtime modules read
-    ``os.environ`` directly.  Streamlit Community Cloud exposes ``st.secrets``;
-    this bridge runs before those modules are imported so their old behaviour is
+    Some runtime modules read ``os.environ`` directly. Streamlit Community Cloud
+    exposes root values through ``st.secrets``; this bridge runs before those
+    modules are imported so the existing Gemini, Drive and database behaviour is
     preserved without exposing secret values.
     """
     loaded: dict[str, bool] = {}
@@ -57,7 +57,7 @@ def apply_streamlit_secrets_to_env(keys: Iterable[str] = _SECRET_KEYS) -> dict[s
         else:
             loaded[name] = False
 
-    # Preserve the user's long-standing Gemini configuration.  If no provider is
+    # Preserve the user's long-standing Gemini configuration. If no provider is
     # explicitly selected but a Gemini key exists, choose Gemini rather than the
     # historical OpenAI default.
     provider = str(os.environ.get("AI_PROVIDER", "") or "").strip().lower()
