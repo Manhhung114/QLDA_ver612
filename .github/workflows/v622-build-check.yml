@@ -8,8 +8,6 @@ on:
       - 'build_v621_webopt.py'
       - 'v622_auth_refresh_v4.py'
       - 'requirements.txt'
-      - 'Dockerfile'
-      - '.dockerignore'
       - 'postgres_backend_v622.py'
       - 'streamlit_secrets_v622.py'
       - 'settings_store.py'
@@ -57,6 +55,12 @@ jobs:
           Path('dist/streamlit_app_v4.py').write_text(text, encoding='utf-8')
           print('V6.22 F5 auth V4 source: OK')
           PY
+      - name: List Railway remnants in built source
+        run: |
+          echo '--- dist/streamlit_app.py ---'
+          grep -ni 'railway' dist/streamlit_app.py || true
+          echo '--- dist/streamlit_app_v4.py ---'
+          grep -ni 'railway' dist/streamlit_app_v4.py || true
       - name: Verify cookie controller runtime API
         run: |
           python -m pip install --disable-pip-version-check --quiet 'streamlit>=1.48,<2' 'streamlit-cookies-controller==0.0.4'
@@ -94,5 +98,3 @@ jobs:
           assert a < b < c < d < e < f
           print('V6.22 Streamlit secrets/Gemini bootstrap order: OK')
           PY
-      - name: Build production Docker image
-        run: docker build -t qlda-v622-auth-v4 .
