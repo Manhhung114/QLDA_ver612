@@ -5,9 +5,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /src
 COPY build_v621_webopt.py ./
+COPY v622_auth_refresh_v4.py ./
 COPY v621_webopt_source ./v621_webopt_source
 RUN python build_v621_webopt.py \
-    && python -m py_compile dist/streamlit_app.py
+    && python -c "from pathlib import Path; from v622_auth_refresh_v4 import patch_auth_refresh_v4; p=Path('dist/streamlit_app.py'); text=patch_auth_refresh_v4(p.read_text(encoding='utf-8')); p.write_text(text, encoding='utf-8'); compile(text, str(p), 'exec'); print('V6.22 auth V4 Docker patch: OK')"
 
 
 FROM python:3.12-slim
