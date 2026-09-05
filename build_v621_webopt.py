@@ -45,9 +45,9 @@ FORBIDDEN_UI_NOTE_MARKERS = HIDDEN_UI_NOTE_MARKERS
 def _inject_runtime_bootstrap(source: str) -> str:
     """Load Streamlit secrets, then PostgreSQL, then WebOpt runtime.
 
-    V6.21 originally ran on Railway/Render and many modules read os.environ.
-    On Streamlit Community Cloud we bridge root st.secrets into os.environ before
-    importing those legacy modules, preserving Gemini/Drive/DB behaviour.
+    Legacy modules read ``os.environ`` directly. On Streamlit Community Cloud we
+    bridge root ``st.secrets`` into the environment before importing them so the
+    existing Gemini, Drive and database behaviour is preserved.
     """
     marker = "# V6.22 BOOTSTRAP START"
     if marker in source:
@@ -86,6 +86,67 @@ def _validate_bootstrap_order(source: str) -> None:
         )
 
 
+def _remove_obsolete_deploy_runtime(source: str) -> str:
+    """Keep the generated application focused on Streamlit Community Cloud.
+
+    The bundled V6.21 source still contains branches for an obsolete deployment
+    target. They are removed during finalization so they cannot affect runtime or
+    confuse the settings UI. Render compatibility is left untouched.
+    """
+    source = source.replace(
+        '''IS_RAILWAY = bool(\n    str(os.environ.get("RAILWAY_ENVIRONMENT", "")).strip()\n    or str(os.environ.get("RAILWAY_SERVICE_ID", "")).strip()\n    or str(os.environ.get("RAILWAY_PROJECT_ID", "")).strip()\n)\nDEPLOY_PLATFORM = "Railway" if IS_RAILWAY else ("Render" if IS_RENDER else "Streamlit/Local")\nDEFAULT_DB_PATH = Path("/var/data/qlda_cloud.db") if (IS_RENDER or IS_RAILWAY) else (DATA_DIR / "qlda_cloud.db")\n''',
+        '''DEPLOY_PLATFORM = "Render" if IS_RENDER else "Streamlit/Local"\nDEFAULT_DB_PATH = Path("/var/data/qlda_cloud.db") if IS_RENDER else (DATA_DIR / "qlda_cloud.db")\n''',
+        1,
+    )
+    source = source.replace(
+        'st.set_page_config(page_title="QLDA Xây dựng V6.21 • Railway Web Optimized • Drive 2GB", page_icon="🏗️", layout="wide")',
+        'st.set_page_config(page_title="QLDA Xây dựng V6.22 • Streamlit Cloud • Drive 2GB", page_icon="🏗️", layout="wide")',
+        1,
+    )
+    source = source.replace(
+        '''    railway = str(os.environ.get("RAILWAY_PUBLIC_DOMAIN", "") or "").strip()\n    if railway:\n        return railway if railway.startswith("http") else "https://" + railway\n''',
+        "",
+        1,
+    )
+    source = source.replace(
+        '    secure = "; Secure" if (IS_RAILWAY or IS_RENDER) else ""',
+        '    secure = "; Secure" if IS_RENDER else ""',
+    )
+    source = source.replace(
+        '''    if IS_RAILWAY:\n        return "Railway → Service → Variables"\n''',
+        "",
+        1,
+    )
+    source = source.replace(
+        '"Ứng dụng Railway đang mới hơn backend Apps Script. "',
+        '"Ứng dụng đang mới hơn backend Apps Script. "',
+        1,
+    )
+    source = source.replace(
+        '''        if IS_RAILWAY:\n            st.success(f"Đang chạy trên Railway • service: {os.environ.get('RAILWAY_SERVICE_NAME', 'QLDA V6.0')}")\n        elif IS_RENDER:\n''',
+        '''        if IS_RENDER:\n''',
+        1,
+    )
+    source = source.replace(
+        'help="V6.21 chỉ tải module đang chọn để giảm truy vấn và tăng tốc Railway.",',
+        'help="Chỉ tải module đang chọn để giảm truy vấn và tăng tốc ứng dụng.",',
+        1,
+    )
+
+    obsolete_name = "rail" + "way"
+    if obsolete_name in source.lower():
+        lines = [
+            f"{i}: {line.strip()}"
+            for i, line in enumerate(source.splitlines(), 1)
+            if obsolete_name in line.lower()
+        ]
+        raise RuntimeError(
+            "Obsolete deployment runtime remains in final Streamlit source: "
+            + " | ".join(lines[:12])
+        )
+    return source
+
+
 def _finalize_source(source: str) -> str:
     # V6.22 keeps the V6.21 WebOpt UI/workflow while switching the durable DB
     # backend to PostgreSQL when DATABASE_URL is configured.
@@ -94,6 +155,7 @@ def _finalize_source(source: str) -> str:
     source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.22 PostgreSQL Cloud**")
     source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.22 PostgreSQL Cloud")
 
+    source = _remove_obsolete_deploy_runtime(source)
     source = _inject_runtime_bootstrap(source)
     _validate_bootstrap_order(source)
 
