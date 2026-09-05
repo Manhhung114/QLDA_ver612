@@ -1,0 +1,172 @@
+name: Purge obsolete deployment code
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/purge_obsolete_deploy.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Rewrite active bundle and remove obsolete source
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import gzip
+          import math
+          import re
+          import shutil
+          from pathlib import Path
+
+          from build_v621_webopt import _remove_obsolete_deploy_runtime
+
+          root = Path('.')
+          obsolete = 'rail' + 'way'
+
+          # 1) Rewrite the active V6.21 WebOpt bundle itself so the stored source,
+          # not only the generated runtime, is clean.
+          bundle_dir = root / 'v621_webopt_source'
+          old_parts = sorted(bundle_dir.glob('part_*.b64'))
+          if len(old_parts) != 9:
+              raise RuntimeError(f'Expected 9 active bundle parts, found {len(old_parts)}')
+          encoded = ''.join(p.read_text(encoding='ascii').strip() for p in old_parts)
+          source = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          source = _remove_obsolete_deploy_runtime(source)
+          if obsolete in source.lower():
+              raise RuntimeError('Active bundle still contains obsolete deployment code')
+
+          clean_b64 = base64.b64encode(gzip.compress(source.encode('utf-8'), mtime=0)).decode('ascii')
+          chunk = math.ceil(len(clean_b64) / 9)
+          for p in old_parts:
+              p.unlink()
+          for idx in range(9):
+              piece = clean_b64[idx * chunk:(idx + 1) * chunk]
+              if not piece:
+                  raise RuntimeError('Unexpected empty active bundle part')
+              (bundle_dir / f'part_{idx + 1:02d}.b64').write_text(piece + '\n', encoding='ascii')
+
+          # 2) The historical V6.12 bundle and V6.18-V6.21 patch chain are not
+          # imported by streamlit_app.py / V6.22. Remove those obsolete sources.
+          shutil.rmtree(root / 'v612_source', ignore_errors=True)
+          for name in (
+              'v618_runtime_patch.py',
+              'v619_runtime_patch.py',
+              'v620_runtime_patch.py',
+              'v621_runtime_patch.py',
+          ):
+              p = root / name
+              if p.exists():
+                  p.unlink()
+
+          # 3) Clean the few remaining user-facing comments/messages.
+          replacements = {
+              'ai_service.py': (
+                  ('Railway/Render/Streamlit Secrets', 'Streamlit Secrets'),
+                  ('Render/Railway/Streamlit Secrets', 'Streamlit Secrets'),
+                  ('Railway/Render Environment Variables hoặc Streamlit Secrets', 'Streamlit Community Cloud Secrets'),
+              ),
+              'postgres_backend_v622.py': (
+                  ('Railway SQLite', 'SQLite legacy'),
+              ),
+              'google_drive_appscript/Code.gs': (
+                  ('Python/Railway/Render', 'Python/Streamlit Community Cloud'),
+              ),
+              'google_drive_appscript/Code.gs.pre_v62_approval_permissions': (
+                  ('Python/Railway/Render', 'Python/Streamlit Community Cloud'),
+              ),
+          }
+          for name, pairs in replacements.items():
+              p = root / name
+              text = p.read_text(encoding='utf-8')
+              for old, new in pairs:
+                  text = text.replace(old, new)
+              p.write_text(text, encoding='utf-8')
+
+          # 4) Now that the active bundle is clean, remove the temporary sanitizer
+          # from the build script itself. The finalizer no longer needs old-platform
+          # anchors or environment-variable names.
+          build_path = root / 'build_v621_webopt.py'
+          build_text = build_path.read_text(encoding='utf-8')
+          build_text, count = re.subn(
+              r'\n\ndef _remove_obsolete_deploy_runtime\(source: str\) -> str:.*?\n\ndef _finalize_source',
+              '\n\ndef _finalize_source',
+              build_text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise RuntimeError('Could not remove obsolete deployment sanitizer from build script')
+          build_text = build_text.replace('    source = _remove_obsolete_deploy_runtime(source)\n', '', 1)
+          build_path.write_text(build_text, encoding='utf-8')
+
+          # 5) This one-shot workflow removes itself after the purge commit.
+          Path('.github/workflows/purge_obsolete_deploy.yml').unlink()
+
+          # 6) Verify every readable repository text file. Encoded active bundle is
+          # checked after decoding separately below.
+          ignored = {'.git', '__pycache__', 'dist', 'v621_webopt_source'}
+          bad = []
+          for p in root.rglob('*'):
+              if not p.is_file() or any(part in ignored for part in p.parts):
+                  continue
+              try:
+                  text = p.read_text(encoding='utf-8').lower()
+              except (UnicodeDecodeError, OSError):
+                  continue
+              if obsolete in text:
+                  bad.append(str(p))
+          if bad:
+              raise RuntimeError('Obsolete deployment references remain: ' + ', '.join(bad))
+
+          parts = sorted(bundle_dir.glob('part_*.b64'))
+          encoded = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
+          decoded = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
+          if obsolete in decoded.lower():
+              raise RuntimeError('Obsolete deployment reference remains in active encoded bundle')
+          if len(parts) != 9:
+              raise RuntimeError('Active bundle part count changed unexpectedly')
+
+          print('Repository purge verification: OK')
+          PY
+
+      - name: Validate cleaned V6.22 build
+        run: |
+          python -m py_compile streamlit_app.py build_v621_webopt.py v622_auth_refresh_v4.py postgres_backend_v622.py streamlit_secrets_v622.py settings_store.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
+          python build_v621_webopt.py
+          python - <<'PY'
+          from pathlib import Path
+          from v622_auth_refresh_v4 import patch_auth_refresh_v4
+
+          obsolete = 'rail' + 'way'
+          p = Path('dist/streamlit_app.py')
+          text = patch_auth_refresh_v4(p.read_text(encoding='utf-8'))
+          compile(text, 'dist/streamlit_app_v4.py', 'exec')
+          assert obsolete not in text.lower()
+          print('Clean V6.22 Streamlit build: OK')
+          PY
+
+      - name: Commit purge
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Nothing to purge.'
+            exit 0
+          fi
+          git commit -m 'Remove obsolete deployment code and legacy sources'
+          git push origin HEAD:main
