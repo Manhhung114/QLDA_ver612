@@ -41,6 +41,40 @@ HIDDEN_UI_NOTE_MARKERS = (
 FORBIDDEN_UI_NOTE_MARKERS = HIDDEN_UI_NOTE_MARKERS
 
 
+def _inject_runtime_bootstrap(source: str) -> str:
+    """Inject V6.22 DB/runtime hooks without depending on a historical source anchor.
+
+    The Community Cloud source bundle can come from an older V6.21 snapshot that
+    does not yet contain the WebOpt runtime import.  V6.22 therefore installs the
+    PostgreSQL backend first, then the idempotent V6.21 runtime, immediately after
+    the future import when present.
+    """
+    bootstrap: list[str] = []
+
+    if "from postgres_backend_v622 import install_postgres_backend" not in source:
+        bootstrap.extend([
+            "from postgres_backend_v622 import install_postgres_backend",
+            "install_postgres_backend()",
+        ])
+
+    if "from v621_webopt_runtime import install_runtime" not in source:
+        bootstrap.extend([
+            "from v621_webopt_runtime import install_runtime",
+            "install_runtime()",
+        ])
+    elif "install_runtime()" not in source:
+        bootstrap.append("install_runtime()")
+
+    if not bootstrap:
+        return source
+
+    block = "\n".join(bootstrap) + "\n"
+    future_anchor = "from __future__ import annotations\n"
+    if future_anchor in source:
+        return source.replace(future_anchor, future_anchor + "\n" + block, 1)
+    return block + "\n" + source
+
+
 def _finalize_source(source: str) -> str:
     # V6.22 keeps the V6.21 WebOpt UI/workflow while switching the durable DB
     # backend to PostgreSQL when DATABASE_URL is configured.
@@ -49,15 +83,9 @@ def _finalize_source(source: str) -> str:
     source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.22 PostgreSQL Cloud**")
     source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.22 PostgreSQL Cloud")
 
-    runtime_import = "from v621_webopt_runtime import install_runtime\n"
-    pg_bootstrap = (
-        "from postgres_backend_v622 import install_postgres_backend\n"
-        "install_postgres_backend()\n"
-    )
-    if runtime_import not in source:
-        raise RuntimeError("V6.22 runtime import anchor missing")
-    if "from postgres_backend_v622 import install_postgres_backend" not in source:
-        source = source.replace(runtime_import, pg_bootstrap + runtime_import, 1)
+    # Do not rely on an exact historical import line. Community Cloud can be
+    # rebuilt from a V6.21 source snapshot that lacks that anchor entirely.
+    source = _inject_runtime_bootstrap(source)
 
     typewriter_helper = r'''def _ai_typewriter_stream(stream):
     """Chia chunk AI lớn thành cụm nhỏ để luôn hiển thị dần trên Streamlit."""
@@ -91,28 +119,31 @@ def _finalize_source(source: str) -> str:
 
 
 '''
-    if "def render_ai_assistant(pid: int):\n" not in source:
-        raise RuntimeError("V6.22 AI typewriter anchor missing")
-    source = source.replace(
-        "def render_ai_assistant(pid: int):\n",
-        typewriter_helper + "def render_ai_assistant(pid: int):\n",
-        1,
-    )
+    if "def _ai_typewriter_stream(stream):" not in source:
+        if "def render_ai_assistant(pid: int):\n" not in source:
+            raise RuntimeError("V6.22 AI typewriter anchor missing")
+        source = source.replace(
+            "def render_ai_assistant(pid: int):\n",
+            typewriter_helper + "def render_ai_assistant(pid: int):\n",
+            1,
+        )
 
     ai_import = "from ai_service import (AIServiceError, AISettings, OpenAIProjectAssistant, GeminiSettings, GeminiProjectAssistant, ProjectContextBuilder)\n"
-    if ai_import not in source:
-        raise RuntimeError("V6.22 AI import anchor missing")
-    source = source.replace(
-        ai_import,
-        ai_import + "from ai_streaming_patch import install_ai_streaming\ninstall_ai_streaming()\n",
-        1,
-    )
+    if "from ai_streaming_patch import install_ai_streaming" not in source:
+        if ai_import not in source:
+            raise RuntimeError("V6.22 AI import anchor missing")
+        source = source.replace(
+            ai_import,
+            ai_import + "from ai_streaming_patch import install_ai_streaming\ninstall_ai_streaming()\n",
+            1,
+        )
 
     old_chat = '''            try:\n                with st.chat_message("assistant"):\n                    with st.spinner("AI đang phân tích dữ liệu dự án..."):\n                        answer = ai.ask_project(pid, q, previous, date.today(), use_web=False)\n                    st.markdown(answer)\n                st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
     new_chat = '''            try:\n                with st.chat_message("assistant"):\n                    _ai_status = st.empty()\n                    _ai_status.caption("AI đang phân tích dữ liệu dự án...")\n                    answer = st.write_stream(\n                        _ai_typewriter_stream(ai.ask_project_stream(pid, q, previous, date.today(), use_web=False))\n                    )\n                    _ai_status.empty()\n                answer = str(answer or "").strip()\n                if answer:\n                    st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
-    if old_chat not in source:
-        raise RuntimeError("V6.22 AI streaming chat anchor missing")
-    source = source.replace(old_chat, new_chat, 1)
+    if "st.write_stream(" not in source:
+        if old_chat not in source:
+            raise RuntimeError("V6.22 AI streaming chat anchor missing")
+        source = source.replace(old_chat, new_chat, 1)
 
     source = "\n".join(
         line for line in source.splitlines()
