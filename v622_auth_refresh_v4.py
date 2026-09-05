@@ -9,11 +9,11 @@ def patch_auth_refresh_v4(source: str) -> str:
 
     The generated V6.22 source already restores ``qlda_auth_session_v618`` from
     ``st.context.cookies`` and validates the restored signed token through the
-    existing Drive Gateway ``me`` call.  Only the browser writer is unreliable:
+    existing Drive Gateway ``me`` call. Only the browser writer is unreliable:
     ``components.html`` writes ``document.cookie`` inside its iframe rather than
     reliably on the Streamlit app origin.
 
-    V4 changes only cookie write/remove.  It never adds an auth readiness gate or
+    V4 changes only cookie write/remove. It never adds an auth readiness gate or
     ``st.stop()``, so a cookie-component problem cannot blank the application.
     The historical iframe writer is retained as a fail-open fallback.
     """
@@ -42,7 +42,14 @@ def patch_auth_refresh_v4(source: str) -> str:
 def _qlda_cookie_controller_v4():
     """Create the browser cookie component only when a write/remove is needed."""
     from streamlit_cookies_controller import CookieController as _QLDACookieController
-    return _QLDACookieController()
+    return _QLDACookieController(key="qlda_auth_cookie_v622_v4")
+
+
+def _qlda_cookie_secure_v4() -> bool:
+    try:
+        return str(st.context.url or "").strip().lower().startswith("https://")
+    except Exception:
+        return bool(IS_RAILWAY or IS_RENDER)
 
 
 def _write_browser_session_cookie(token: str) -> None:
@@ -57,14 +64,21 @@ def _write_browser_session_cookie(token: str) -> None:
 
     try:
         controller = _qlda_cookie_controller_v4()
-        controller.set(_QLDA_AUTH_COOKIE, value)
+        controller.set(
+            _QLDA_AUTH_COOKIE,
+            value,
+            path="/",
+            max_age=float(_QLDA_AUTH_COOKIE_MAX_AGE),
+            secure=_qlda_cookie_secure_v4(),
+            same_site="lax",
+        )
         return
     except Exception:
         # Fail open: preserve the historical behavior instead of blocking UI.
         pass
 
     js_value = json.dumps(value)
-    secure = "; Secure" if (IS_RAILWAY or IS_RENDER) else ""
+    secure = "; Secure" if _qlda_cookie_secure_v4() else ""
     components.html(
         f"""<script>
         (function() {{
@@ -79,13 +93,18 @@ def _write_browser_session_cookie(token: str) -> None:
 def _clear_browser_session_cookie() -> None:
     try:
         controller = _qlda_cookie_controller_v4()
-        controller.remove(_QLDA_AUTH_COOKIE)
+        controller.remove(
+            _QLDA_AUTH_COOKIE,
+            path="/",
+            secure=_qlda_cookie_secure_v4(),
+            same_site="lax",
+        )
         return
     except Exception:
         # Fail open and keep the old clear path as a compatibility fallback.
         pass
 
-    secure = "; Secure" if (IS_RAILWAY or IS_RENDER) else ""
+    secure = "; Secure" if _qlda_cookie_secure_v4() else ""
     components.html(
         f"""<script>
         document.cookie = "{_QLDA_AUTH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax{secure}";
