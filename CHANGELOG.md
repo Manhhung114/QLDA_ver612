@@ -1,7 +1,15 @@
 # CHANGELOG
 
+## V6.21 WebOpt — Streamlit Community Cloud target
+- Chuyển entrypoint chính `streamlit_app.py` từ cơ chế ưu tiên Railway/Docker sang **Streamlit Community Cloud**.
+- Source V6.21 WebOpt được giải nén, finalize và compile trực tiếp trong bộ nhớ; không cần Docker build stage, Railway persistent volume hoặc ghi `dist/` lúc runtime.
+- Giữ nguyên toàn bộ nghiệp vụ V6.21, workflow phê duyệt, Google Drive Gateway, đăng nhập persistent và AI streaming/typewriter.
+- `requirements.txt`, `packages.txt` và `.streamlit/config.toml` là bộ cấu hình deploy chính cho Community Cloud.
+- Python deploy khuyến nghị 3.12 để đồng nhất với bản Docker trước đây.
+- Bổ sung `DEPLOY_STREAMLIT_COMMUNITY_CLOUD.md` và cập nhật README.
+- Lưu ý vận hành: filesystem của Community Cloud không phải persistent disk; SQLite cục bộ cần backup/restore hoặc chuyển sang database bền vững nếu cần giữ dữ liệu qua reboot/redeploy.
+
 ## V6.21 WebOpt — Railway Web Performance Final
-- Bổ sung **Typewriter Stream ở giao diện**: mọi chunk OpenAI/Gemini được chia tiếp thành cụm nhỏ 2 từ (mặc định) trước khi `st.write_stream()`. Vì vậy kể cả Gemini trả một chunk văn bản lớn, nội dung vẫn hiện dần thay vì đổ cả khối một lần. Có thể tinh chỉnh bằng `AI_STREAM_WORDS_PER_CHUNK` và `AI_STREAM_DELAY_MS`.
 - Khôi phục **cách trả lời AI như ban đầu**: dùng lại toàn bộ snapshot dự án từ `ProjectContextBuilder.build()` và tối đa 8 message lịch sử gần nhất để câu trả lời đầy đủ, có đủ tiến độ, hồ sơ, bản vẽ, chi phí, vật tư và pháp lý theo logic gốc.
 - Bỏ cơ chế `Fast Context`, bỏ rút gọn lịch sử 4 message và bỏ đường chọn model nhanh cưỡng bức. Gemini quay lại cơ chế model/fallback/retry ban đầu.
 - Vẫn giữ **streaming**: OpenAI dùng Responses streaming delta, Gemini dùng `generate_content_stream`; Streamlit hiển thị dần bằng `st.write_stream()` thay vì chờ xong toàn bộ câu trả lời.
