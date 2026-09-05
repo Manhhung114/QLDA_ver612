@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m py_compile streamlit_app.py build_v621_webopt.py v622_auth_refresh_v4.py postgres_backend_v622.py streamlit_secrets_v622.py settings_store.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
 
-      - name: Rebuild and validate F5 auth source
+      - name: Rebuild and validate F5 auth V5 source
         run: |
           python build_v621_webopt.py
           python - <<'PY'
@@ -46,20 +46,24 @@ jobs:
 
           p = Path('dist/streamlit_app.py')
           text = patch_auth_refresh_v4(p.read_text(encoding='utf-8'))
-          region = text[text.index(PATCH_MARKER):text.index('def _gateway_session_token()')]
+          region = text[text.index(PATCH_MARKER):text.index('def _gateway_logout()')]
           assert 'streamlit_cookies_controller' in region
           assert 'st.stop()' not in region
+          assert 'def _qlda_cookie_reader_v5' in region
+          assert 'def _qlda_cookie_writer_v5' in region
+          assert '_QLDA_AUTH_COOKIE_FALLBACK' in region
           assert 'controller.set(' in region
-          assert 'controller.remove(' in region
+          assert 'partitioned=True' in region
+          assert 'same_site="none"' in region
           assert 'max_age=float(_QLDA_AUTH_COOKIE_MAX_AGE)' in region
-          assert 'same_site="lax"' in region
-          assert 'time.sleep(0.50)' in text
-          assert 'time.sleep(0.35)' in text
+          assert 'time.sleep(1.00)' in text
+          assert 'time.sleep(0.75)' in text
+          assert '_qlda_cookie_write_attempts_v5' in text
+          assert 'browser_seen == live_token' in text
           assert 'token = _browser_session_cookie()' in text
-          assert '_qlda_cookie_written_for_token' in text
-          compile(text, 'dist/streamlit_app_v4.py', 'exec')
-          Path('dist/streamlit_app_v4.py').write_text(text, encoding='utf-8')
-          print('V6.22 F5 auth source: OK')
+          compile(text, 'dist/streamlit_app_v5.py', 'exec')
+          Path('dist/streamlit_app_v5.py').write_text(text, encoding='utf-8')
+          print('V6.22 F5 auth V5 source: OK')
           PY
 
       - name: Verify Streamlit-only runtime
@@ -68,7 +72,7 @@ jobs:
           from pathlib import Path
 
           obsolete = 'rail' + 'way'
-          for name in ('dist/streamlit_app.py', 'dist/streamlit_app_v4.py'):
+          for name in ('dist/streamlit_app.py', 'dist/streamlit_app_v5.py'):
               text = Path(name).read_text(encoding='utf-8').lower()
               assert obsolete not in text, f'{name} still contains obsolete deployment runtime'
           print('Streamlit-only generated runtime: OK')
@@ -103,10 +107,10 @@ jobs:
           from streamlit_cookies_controller import CookieController
 
           params = inspect.signature(CookieController.set).parameters
-          for name in ('path', 'max_age', 'secure', 'same_site'):
+          for name in ('path', 'max_age', 'secure', 'same_site', 'partitioned'):
               assert name in params
-          assert hasattr(CookieController, 'remove')
-          print('CookieController runtime API: OK')
+          assert hasattr(CookieController, 'get')
+          print('CookieController V5 runtime API: OK')
           PY
 
       - name: Verify fail-open initial render invariant
@@ -114,8 +118,8 @@ jobs:
           python - <<'PY'
           from pathlib import Path
 
-          text = Path('dist/streamlit_app_v4.py').read_text(encoding='utf-8')
-          region = text[text.index('# V6.22 AUTH REFRESH V4'):text.index('def _gateway_session_token()')]
+          text = Path('dist/streamlit_app_v5.py').read_text(encoding='utf-8')
+          region = text[text.index('# V6.22 AUTH REFRESH V5'):text.index('def _gateway_logout()')]
           imports = [line for line in region.splitlines() if 'from streamlit_cookies_controller import' in line]
           assert imports and all(line.startswith('    ') for line in imports), imports
           assert 'st.stop()' not in region
