@@ -1,4 +1,4 @@
-# V6.22 PostgreSQL Cloud — minimal Railway build context.
+# V6.22 PostgreSQL Cloud — minimal container build context.
 *
 !Dockerfile
 !.dockerignore
