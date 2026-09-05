@@ -4,6 +4,7 @@
 !.dockerignore
 !requirements.txt
 !build_v621_webopt.py
+!v622_auth_refresh_v4.py
 !v621_webopt_source/
 !v621_webopt_source/**
 !cloud_db.py
