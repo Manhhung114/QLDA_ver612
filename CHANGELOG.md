@@ -1,24 +1,20 @@
 # CHANGELOG
 
-## V6.21 WebOpt — Streamlit Community Cloud target
-- Chuyển entrypoint chính `streamlit_app.py` từ cơ chế ưu tiên Railway/Docker sang **Streamlit Community Cloud**.
-- Source V6.21 WebOpt được giải nén, finalize và compile trực tiếp trong bộ nhớ; không cần Docker build stage, Railway persistent volume hoặc ghi `dist/` lúc runtime.
-- Giữ nguyên toàn bộ nghiệp vụ V6.21, workflow phê duyệt, Google Drive Gateway, đăng nhập persistent và AI streaming/typewriter.
-- `requirements.txt`, `packages.txt` và `.streamlit/config.toml` là bộ cấu hình deploy chính cho Community Cloud.
-- Python deploy khuyến nghị 3.12 để đồng nhất với bản Docker trước đây.
-- Bổ sung `DEPLOY_STREAMLIT_COMMUNITY_CLOUD.md` và cập nhật README.
-- Lưu ý vận hành: filesystem của Community Cloud không phải persistent disk; SQLite cục bộ cần backup/restore hoặc chuyển sang database bền vững nếu cần giữ dữ liệu qua reboot/redeploy.
+## V6.22 PostgreSQL Cloud — Streamlit Community Cloud
+- Chạy trực tiếp bằng `streamlit_app.py` trên **Streamlit Community Cloud**.
+- Source WebOpt được giải nén, finalize và compile trực tiếp trong bộ nhớ; không cần bước build container khi chạy Community Cloud.
+- PostgreSQL được kích hoạt khi `DATABASE_URL` được cấu hình; lớp tương thích SQLite vẫn được giữ cho dữ liệu legacy.
+- Giữ nguyên workflow phê duyệt, Google Drive Gateway, đăng nhập persistent qua F5/Refresh và AI streaming/typewriter.
+- Dọn toàn bộ nhánh runtime và tài liệu của nền tảng triển khai cũ để tránh ảnh hưởng đến Community Cloud.
+- `requirements.txt`, `packages.txt` và `.streamlit/config.toml` là bộ cấu hình deploy chính.
 
-## V6.21 WebOpt — Railway Web Performance Final
+## V6.21 WebOpt
 - Khôi phục **cách trả lời AI như ban đầu**: dùng lại toàn bộ snapshot dự án từ `ProjectContextBuilder.build()` và tối đa 8 message lịch sử gần nhất để câu trả lời đầy đủ, có đủ tiến độ, hồ sơ, bản vẽ, chi phí, vật tư và pháp lý theo logic gốc.
 - Bỏ cơ chế `Fast Context`, bỏ rút gọn lịch sử 4 message và bỏ đường chọn model nhanh cưỡng bức. Gemini quay lại cơ chế model/fallback/retry ban đầu.
-- Vẫn giữ **streaming**: OpenAI dùng Responses streaming delta, Gemini dùng `generate_content_stream`; Streamlit hiển thị dần bằng `st.write_stream()` thay vì chờ xong toàn bộ câu trả lời.
+- Giữ **streaming**: OpenAI dùng Responses streaming delta, Gemini dùng `generate_content_stream`; Streamlit hiển thị dần bằng `st.write_stream()` thay vì chờ xong toàn bộ câu trả lời.
 - Nếu SDK OpenAI cũ không có streaming API, giao diện vẫn phát dần theo từng cụm từ thay vì đổ cả khối một lần.
-- Bỏ các chú thích/hướng dẫn tĩnh trong các sheet để giao diện gọn hơn: không còn dòng `Workflow engine...`, mô tả luồng trả hồ sơ, nhãn `Approval UI / Workflow engine`, hướng dẫn `Nhập đúng Mã...`, nhắc quay lại bấm Làm mới file và chú thích kỹ thuật V6.9.
-- Vẫn giữ các thông báo nghiệp vụ cần thiết: trạng thái đang chờ duyệt, cảnh báo thiếu file, hồ sơ bị trả về, người duyệt, lịch sử và kết quả phê duyệt.
-- Giữ nguyên phiên bản nghiệp vụ V6.21 và toàn bộ luồng phê duyệt online RFA/RFI/Shopdrawing/Hoàn công.
-- Railway dùng multi-stage Docker: source WebOpt cuối được giải nén/kiểm tra/compile ở build stage; runtime image chạy trực tiếp `streamlit_app.py` đã sinh sẵn.
-- Runtime image không còn 12 source bundle và không chạy chuỗi patch V6.16→V6.21 khi Streamlit rerun.
+- Bỏ các chú thích/hướng dẫn tĩnh trong các sheet để giao diện gọn hơn; vẫn giữ các thông báo nghiệp vụ cần thiết.
+- Giữ nguyên toàn bộ luồng phê duyệt online RFA/RFI/Shopdrawing/Hoàn công.
 - Chỉ render module/sheet đang mở; `st.fragment` cho vùng file và phê duyệt online.
 - Plotly và module Văn bản chỉ import khi thực sự dùng; Gantt tắt mặc định.
 - Workflow được đọc theo batch để tránh N+1 query; giữ tương thích hồ sơ legacy qua V6.15 deterministic resubmit.
@@ -27,8 +23,6 @@
 - Bảng lớn phân trang: hồ sơ/bản vẽ 50 dòng/trang; tiến độ 100 dòng/trang.
 - Excel chỉ tạo khi người dùng bấm `Tạo Excel`, không chạy openpyxl ở mọi rerun.
 - Cookie đăng nhập chỉ ghi khi token thay đổi, giảm component HTML thừa.
-- Streamlit production tắt file watcher, bật fast rerun; Docker giới hạn thread BLAS/OMP để giảm CPU/RAM trên Railway.
-- Build context Railway được whitelist chỉ còn các file cần cho build/runtime WebOpt.
 
 ## V6.21 — Partial Rerun / Lazy Load
 - Chỉ render module và sheet đang chọn.
@@ -37,5 +31,5 @@
 ## V6.20 — Runtime Fast Path
 - HTTP pool/cache Drive và SQLite index ban đầu.
 
-## V6.19 — Lean Railway
+## V6.19 — Lean Runtime
 - Dọn build context và tài liệu cũ.
