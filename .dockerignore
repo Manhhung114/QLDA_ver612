@@ -1,4 +1,4 @@
-# V6.21 WebOpt — minimal multi-stage Railway build context.
+# V6.22 PostgreSQL Cloud — minimal Railway build context.
 *
 !Dockerfile
 !.dockerignore
@@ -7,6 +7,7 @@
 !v621_webopt_source/
 !v621_webopt_source/**
 !cloud_db.py
+!postgres_backend_v622.py
 !drive_gateway.py
 !mpp_cloud_reader.py
 !legal_documents.py
