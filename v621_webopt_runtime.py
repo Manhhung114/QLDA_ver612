@@ -29,6 +29,11 @@ _USER_ACTIONS = {"me", "approval_users", "list_users", "root_info"}
 def _install_sqlite_fast_path() -> None:
     from cloud_db import CloudDatabase
 
+    # V6.22: DATABASE_URL activates a PostgreSQL-compatible CloudDatabase before
+    # this runtime is installed. Never overwrite its connection/schema methods
+    # with SQLite PRAGMA/WAL hooks.
+    if getattr(CloudDatabase, "_v622_postgres", False):
+        return
     if getattr(CloudDatabase, "_v621_webopt_sqlite", False):
         return
 
@@ -145,7 +150,7 @@ def _install_drive_fast_path() -> None:
         adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=0)
         self._v621_http.mount("https://", adapter)
         self._v621_http.mount("http://", adapter)
-        self._v621_http.headers.update({"User-Agent": "QLDA-XayDung-V6.21-WebOpt/1.0"})
+        self._v621_http.headers.update({"User-Agent": "QLDA-XayDung-V6.22-PostgreSQL/1.0"})
         self._v621_cache = {}
         self._v621_cache_lock = threading.RLock()
 
@@ -239,7 +244,7 @@ def _install_drive_fast_path() -> None:
 
 
 def install_runtime() -> None:
-    """Install only the compatibility/performance hooks required by WebOpt."""
+    """Install workflow/Drive optimizations; SQLite tuning only on SQLite backend."""
     _install_workflow_compat()
     _install_sqlite_fast_path()
     _install_drive_fast_path()
