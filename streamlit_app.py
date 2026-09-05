@@ -2,8 +2,20 @@ from __future__ import annotations
 
 import base64
 import gzip
+import os
 from functools import lru_cache
 from pathlib import Path
+
+# Keep the Railway WebOpt resource limits when running on Streamlit Community
+# Cloud. These are set before pandas/numpy/BLAS are imported by the generated app.
+for _name, _value in {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "MALLOC_ARENA_MAX": "2",
+}.items():
+    os.environ.setdefault(_name, _value)
 
 from build_v621_webopt import _finalize_source
 
