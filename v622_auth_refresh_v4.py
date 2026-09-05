@@ -49,7 +49,7 @@ def _qlda_cookie_secure_v4() -> bool:
     try:
         return str(st.context.url or "").strip().lower().startswith("https://")
     except Exception:
-        return bool(IS_RAILWAY or IS_RENDER)
+        return False
 
 
 def _write_browser_session_cookie(token: str) -> None:
