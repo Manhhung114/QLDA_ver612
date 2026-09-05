@@ -1,4 +1,4 @@
-name: V6.22 Build Check
+name: V6.22 Streamlit Build Check
 
 on:
   push:
@@ -8,6 +8,8 @@ on:
       - 'build_v621_webopt.py'
       - 'v622_auth_refresh_v4.py'
       - 'requirements.txt'
+      - 'packages.txt'
+      - '.streamlit/**'
       - 'postgres_backend_v622.py'
       - 'streamlit_secrets_v622.py'
       - 'settings_store.py'
@@ -29,15 +31,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Compile V6.22 support modules
         run: |
           python -m py_compile streamlit_app.py build_v621_webopt.py v622_auth_refresh_v4.py postgres_backend_v622.py streamlit_secrets_v622.py settings_store.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
-      - name: Rebuild and validate exact F5 auth V4 source
+
+      - name: Rebuild and validate F5 auth source
         run: |
           python build_v621_webopt.py
           python - <<'PY'
           from pathlib import Path
           from v622_auth_refresh_v4 import PATCH_MARKER, patch_auth_refresh_v4
+
           p = Path('dist/streamlit_app.py')
           text = patch_auth_refresh_v4(p.read_text(encoding='utf-8'))
           region = text[text.index(PATCH_MARKER):text.index('def _gateway_session_token()')]
@@ -53,30 +58,61 @@ jobs:
           assert '_qlda_cookie_written_for_token' in text
           compile(text, 'dist/streamlit_app_v4.py', 'exec')
           Path('dist/streamlit_app_v4.py').write_text(text, encoding='utf-8')
-          print('V6.22 F5 auth V4 source: OK')
+          print('V6.22 F5 auth source: OK')
           PY
-      - name: Inspect exact Railway code blocks
+
+      - name: Verify Streamlit-only runtime
         run: |
-          for range in '45,70' '1155,1175' '4455,4480' '4700,4720' '4765,4840' '5008,5030'; do
-            echo "===== $range ====="
-            sed -n "${range}p" dist/streamlit_app.py
-          done
+          python - <<'PY'
+          from pathlib import Path
+
+          obsolete = 'rail' + 'way'
+          for name in ('dist/streamlit_app.py', 'dist/streamlit_app_v4.py'):
+              text = Path(name).read_text(encoding='utf-8').lower()
+              assert obsolete not in text, f'{name} still contains obsolete deployment runtime'
+          print('Streamlit-only generated runtime: OK')
+          PY
+
+      - name: Verify repository text has no obsolete deployment references
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          obsolete = 'rail' + 'way'
+          ignored_dirs = {'.git', 'dist', 'v621_webopt_source', '__pycache__'}
+          bad = []
+          for path in Path('.').rglob('*'):
+              if not path.is_file() or any(part in ignored_dirs for part in path.parts):
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8').lower()
+              except (UnicodeDecodeError, OSError):
+                  continue
+              if obsolete in text:
+                  bad.append(str(path))
+          assert not bad, 'Obsolete deployment references remain: ' + ', '.join(bad)
+          print('Repository text cleanup: OK')
+          PY
+
       - name: Verify cookie controller runtime API
         run: |
           python -m pip install --disable-pip-version-check --quiet 'streamlit>=1.48,<2' 'streamlit-cookies-controller==0.0.4'
           python - <<'PY'
           import inspect
           from streamlit_cookies_controller import CookieController
+
           params = inspect.signature(CookieController.set).parameters
-          for name in ('path','max_age','secure','same_site'):
+          for name in ('path', 'max_age', 'secure', 'same_site'):
               assert name in params
           assert hasattr(CookieController, 'remove')
           print('CookieController runtime API: OK')
           PY
+
       - name: Verify fail-open initial render invariant
         run: |
           python - <<'PY'
           from pathlib import Path
+
           text = Path('dist/streamlit_app_v4.py').read_text(encoding='utf-8')
           region = text[text.index('# V6.22 AUTH REFRESH V4'):text.index('def _gateway_session_token()')]
           imports = [line for line in region.splitlines() if 'from streamlit_cookies_controller import' in line]
@@ -84,10 +120,12 @@ jobs:
           assert 'st.stop()' not in region
           print('Fail-open initial render invariant: OK')
           PY
-      - name: Verify Gemini secrets bridge order
+
+      - name: Verify Streamlit secrets bootstrap order
         run: |
           python - <<'PY'
           from build_v621_webopt import build
+
           text = build().read_text(encoding='utf-8')
           a = text.index('from streamlit_secrets_v622 import apply_streamlit_secrets_to_env')
           b = text.index('apply_streamlit_secrets_to_env()')
@@ -96,5 +134,5 @@ jobs:
           e = text.index('from v621_webopt_runtime import install_runtime')
           f = text.index('install_runtime()')
           assert a < b < c < d < e < f
-          print('V6.22 Streamlit secrets/Gemini bootstrap order: OK')
+          print('V6.22 Streamlit secrets bootstrap order: OK')
           PY
