@@ -24,6 +24,7 @@ from postgres_backend_v622 import install_postgres_backend
 install_postgres_backend()
 
 from build_v621_webopt import _finalize_source
+from v622_auth_refresh_v4 import patch_auth_refresh_v4
 
 
 # Streamlit Community Cloud entrypoint. The historical V6.21 source bundle is
@@ -51,6 +52,7 @@ def _compiled_community_cloud_app(signature):
         raise RuntimeError(f"Invalid QLDA V6.22 source bundle: {exc}") from exc
 
     source = _finalize_source(source)
+    source = patch_auth_refresh_v4(source)
     return compile(source, str(_ROOT / "streamlit_app_v622_postgresql.py"), "exec")
 
 
