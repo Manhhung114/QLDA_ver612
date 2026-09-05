@@ -35,8 +35,8 @@ WORKDIR /app
 COPY requirements.txt ./requirements.txt
 RUN pip install --prefer-binary -r requirements.txt
 
-# V6.22: the generated app activates PostgreSQL when DATABASE_URL exists; if not,
-# Railway can still use the legacy SQLite persistent volume at /var/data.
+# V6.22: the generated app activates PostgreSQL when DATABASE_URL exists.
+# The local SQLite path remains available as a compatibility fallback.
 COPY --from=webopt-builder /src/dist/streamlit_app.py ./streamlit_app.py
 COPY cloud_db.py postgres_backend_v622.py drive_gateway.py mpp_cloud_reader.py legal_documents.py settings_store.py ai_service.py legal_cache.json ./
 COPY v615_runtime_patch.py v621_webopt_runtime.py ai_streaming_patch.py ./
