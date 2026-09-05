@@ -55,12 +55,12 @@ jobs:
           Path('dist/streamlit_app_v4.py').write_text(text, encoding='utf-8')
           print('V6.22 F5 auth V4 source: OK')
           PY
-      - name: List Railway remnants in built source
+      - name: Inspect exact Railway code blocks
         run: |
-          echo '--- dist/streamlit_app.py ---'
-          grep -ni 'railway' dist/streamlit_app.py || true
-          echo '--- dist/streamlit_app_v4.py ---'
-          grep -ni 'railway' dist/streamlit_app_v4.py || true
+          for range in '45,70' '1155,1175' '4455,4480' '4700,4720' '4765,4840' '5008,5030'; do
+            echo "===== $range ====="
+            sed -n "${range}p" dist/streamlit_app.py
+          done
       - name: Verify cookie controller runtime API
         run: |
           python -m pip install --disable-pip-version-check --quiet 'streamlit>=1.48,<2' 'streamlit-cookies-controller==0.0.4'
