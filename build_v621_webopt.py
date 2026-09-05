@@ -8,6 +8,7 @@ from pathlib import Path
 APP_VERSION_LABEL = "QLDA Xây dựng V6.22 PostgreSQL Cloud"
 REQUIRED_MARKERS = (
     APP_VERSION_LABEL,
+    "from streamlit_secrets_v622 import apply_streamlit_secrets_to_env",
     "from postgres_backend_v622 import install_postgres_backend",
     "from v621_webopt_runtime import install_runtime",
     "approval_workflows_for_records",
@@ -42,13 +43,11 @@ FORBIDDEN_UI_NOTE_MARKERS = HIDDEN_UI_NOTE_MARKERS
 
 
 def _inject_runtime_bootstrap(source: str) -> str:
-    """Install V6.22 PostgreSQL first, then the idempotent V6.21 WebOpt runtime.
+    """Load Streamlit secrets, then PostgreSQL, then WebOpt runtime.
 
-    The block is intentionally self-contained even if historical imports already
-    exist later in the bundled source.  This avoids calling install_runtime()
-    before its import when Streamlit Community Cloud executes the generated app.
-    Duplicate imports/calls later are harmless because both installers are
-    idempotent.
+    V6.21 originally ran on Railway/Render and many modules read os.environ.
+    On Streamlit Community Cloud we bridge root st.secrets into os.environ before
+    importing those legacy modules, preserving Gemini/Drive/DB behaviour.
     """
     marker = "# V6.22 BOOTSTRAP START"
     if marker in source:
@@ -56,6 +55,8 @@ def _inject_runtime_bootstrap(source: str) -> str:
 
     block = (
         "# V6.22 BOOTSTRAP START\n"
+        "from streamlit_secrets_v622 import apply_streamlit_secrets_to_env\n"
+        "apply_streamlit_secrets_to_env()\n"
         "from postgres_backend_v622 import install_postgres_backend\n"
         "install_postgres_backend()\n"
         "from v621_webopt_runtime import install_runtime\n"
@@ -69,16 +70,19 @@ def _inject_runtime_bootstrap(source: str) -> str:
 
 
 def _validate_bootstrap_order(source: str) -> None:
-    """Fail the build if a runtime installer can execute before its import."""
+    """Fail build if secrets/runtime installers can execute before import."""
+    sec_import = source.find("from streamlit_secrets_v622 import apply_streamlit_secrets_to_env")
+    sec_call = source.find("apply_streamlit_secrets_to_env()")
     pg_import = source.find("from postgres_backend_v622 import install_postgres_backend")
     pg_call = source.find("install_postgres_backend()")
     rt_import = source.find("from v621_webopt_runtime import install_runtime")
     rt_call = source.find("install_runtime()")
-    if min(pg_import, pg_call, rt_import, rt_call) < 0:
+    positions = (sec_import, sec_call, pg_import, pg_call, rt_import, rt_call)
+    if min(positions) < 0:
         raise RuntimeError("V6.22 bootstrap incomplete")
-    if not (pg_import < pg_call < rt_import < rt_call):
+    if not (sec_import < sec_call < pg_import < pg_call < rt_import < rt_call):
         raise RuntimeError(
-            "V6.22 bootstrap order invalid: expected PostgreSQL import/call then WebOpt import/call"
+            "V6.22 bootstrap order invalid: secrets -> PostgreSQL -> WebOpt required"
         )
 
 
