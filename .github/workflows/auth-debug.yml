@@ -28,8 +28,10 @@ jobs:
           region = text[text.index(PATCH_MARKER):text.index('def _gateway_session_token()')]
           assert 'streamlit_cookies_controller' in region
           assert 'st.stop()' not in region
-          assert 'controller.set(_QLDA_AUTH_COOKIE, value)' in region
-          assert 'controller.remove(_QLDA_AUTH_COOKIE)' in region
+          assert 'controller.set(' in region
+          assert 'controller.remove(' in region
+          assert 'max_age=float(_QLDA_AUTH_COOKIE_MAX_AGE)' in region
+          assert 'same_site="lax"' in region
           assert 'time.sleep(0.50)' in text
           assert 'time.sleep(0.35)' in text
           assert 'token = _browser_session_cookie()' in text
@@ -49,18 +51,20 @@ jobs:
           print('CookieController', inspect.signature(CookieController))
           print('set', inspect.signature(CookieController.set))
           print('remove', inspect.signature(CookieController.remove))
-          assert hasattr(CookieController, 'set')
+          params = inspect.signature(CookieController.set).parameters
+          for name in ('path','max_age','secure','same_site'):
+              assert name in params
           assert hasattr(CookieController, 'remove')
           print('CookieController runtime API: OK')
           PY
-      - name: Verify no auth component runs on initial import path
+      - name: Verify fail-open initial render invariant
         run: |
           python - <<'PY'
           from pathlib import Path
           text = Path('dist/streamlit_app_v4.py').read_text(encoding='utf-8')
-          # Component import stays inside the writer helper, so ordinary app start
-          # and anonymous login screen cannot fail just because cookie write fails.
-          before = text[:text.index('def _write_browser_session_cookie(token: str) -> None:')]
-          assert 'streamlit_cookies_controller' not in before
-          print('Fail-open initial render invariant: OK')
+          region = text[text.index('# V6.22 AUTH REFRESH V4'):text.index('def _gateway_session_token()')]
+          imports = [line for line in region.splitlines() if 'from streamlit_cookies_controller import' in line]
+          assert imports and all(line.startswith('    ') for line in imports), imports
+          assert 'st.stop()' not in region
+          print('Cookie dependency is lazy/function-scoped; initial render remains fail-open: OK')
           PY
