@@ -34,10 +34,10 @@ WORKDIR /app
 COPY requirements.txt ./requirements.txt
 RUN pip install --prefer-binary -r requirements.txt
 
-# Final Railway image contains only the generated WebOpt app and runtime modules.
-# Build source parts stay in the builder stage and are not copied into runtime.
+# V6.22: the generated app activates PostgreSQL when DATABASE_URL exists; if not,
+# Railway can still use the legacy SQLite persistent volume at /var/data.
 COPY --from=webopt-builder /src/dist/streamlit_app.py ./streamlit_app.py
-COPY cloud_db.py drive_gateway.py mpp_cloud_reader.py legal_documents.py settings_store.py ai_service.py legal_cache.json ./
+COPY cloud_db.py postgres_backend_v622.py drive_gateway.py mpp_cloud_reader.py legal_documents.py settings_store.py ai_service.py legal_cache.json ./
 COPY v615_runtime_patch.py v621_webopt_runtime.py ai_streaming_patch.py ./
 COPY .streamlit/config.toml ./.streamlit/config.toml
 
