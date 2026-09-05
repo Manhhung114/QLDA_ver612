@@ -1,0 +1,34 @@
+name: V6.22 Build Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'streamlit_app.py'
+      - 'build_v621_webopt.py'
+      - 'postgres_backend_v622.py'
+      - 'v621_webopt_runtime.py'
+      - 'v615_runtime_patch.py'
+      - 'cloud_db.py'
+      - 'ai_service.py'
+      - 'ai_streaming_patch.py'
+      - 'legal_documents.py'
+      - 'v621_webopt_source/**'
+      - '.github/workflows/v622-build-check.yml'
+  workflow_dispatch:
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile V6.22 support modules
+        run: |
+          python -m py_compile streamlit_app.py build_v621_webopt.py postgres_backend_v622.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
+      - name: Rebuild and compile final Streamlit app
+        run: |
+          python build_v621_webopt.py
+          python -m py_compile dist/streamlit_app.py
