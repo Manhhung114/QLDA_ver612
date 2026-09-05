@@ -5,8 +5,10 @@ import gzip
 from pathlib import Path
 
 
+APP_VERSION_LABEL = "QLDA Xây dựng V6.22 PostgreSQL Cloud"
 REQUIRED_MARKERS = (
-    "QLDA Xây dựng V6.21 WebOpt",
+    APP_VERSION_LABEL,
+    "from postgres_backend_v622 import install_postgres_backend",
     "from v621_webopt_runtime import install_runtime",
     "approval_workflows_for_records",
     "@st.fragment\ndef _render_online_approval",
@@ -22,39 +24,40 @@ REQUIRED_MARKERS = (
     "def _ai_typewriter_stream",
 )
 
-# Các dòng dưới đây chỉ là chú thích/hướng dẫn tĩnh trên giao diện. Chúng không
-# tham gia workflow, quyền, DB hoặc Google Drive nên V6.21 WebOpt Clean UI loại
-# bỏ ở build stage để các sheet gọn hơn, đặc biệt trên điện thoại.
 HIDDEN_UI_NOTE_MARKERS = (
     "Sau khi tải file lớn xong, quay lại app",
     "Sau khi tải xong, quay lại app và bấm Làm mới file / File DB",
     "File lớn hơn giới hạn trên: dùng 'Mở trình tải file ở tab riêng'",
     "Workflow engine: **V6.21 WebOpt** • Nhà thầu trình",
+    "Workflow engine: **V6.22 PostgreSQL Cloud** • Nhà thầu trình",
     "Nếu một cấp yêu cầu chỉnh sửa: hồ sơ quay về Nhà thầu",
     "V6.9 không dùng nút Trình lại riêng",
     "Approval UI / Workflow engine: V6.21",
+    "Approval UI / Workflow engine: V6.22",
     "Nhập đúng Mã hồ sơ và Nội dung trình duyệt trước khi đính kèm file",
     "Nhập đúng Mã bản vẽ và Nội dung/Tên bản vẽ trước khi đính kèm file",
 )
 
-
-FORBIDDEN_UI_NOTE_MARKERS = (
-    "Workflow engine: **V6.21 WebOpt** • Nhà thầu trình",
-    "Nếu một cấp yêu cầu chỉnh sửa: hồ sơ quay về Nhà thầu",
-    "Approval UI / Workflow engine: V6.21 WebOpt",
-    "V6.9 không dùng nút Trình lại riêng",
-    "Nhập đúng Mã hồ sơ và Nội dung trình duyệt trước khi đính kèm file",
-    "Nhập đúng Mã bản vẽ và Nội dung/Tên bản vẽ trước khi đính kèm file",
-    "Sau khi tải xong, quay lại app và bấm Làm mới file / File DB",
-    "Sau khi tải file lớn xong, quay lại app",
-    "File lớn hơn giới hạn trên: dùng 'Mở trình tải file ở tab riêng'",
-)
+FORBIDDEN_UI_NOTE_MARKERS = HIDDEN_UI_NOTE_MARKERS
 
 
 def _finalize_source(source: str) -> str:
-    source = source.replace("QLDA Xây dựng V6.0", "QLDA Xây dựng V6.21 WebOpt")
-    source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.21 WebOpt**")
-    source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.21 WebOpt")
+    # V6.22 keeps the V6.21 WebOpt UI/workflow while switching the durable DB
+    # backend to PostgreSQL when DATABASE_URL is configured.
+    source = source.replace("QLDA Xây dựng V6.21 WebOpt", APP_VERSION_LABEL)
+    source = source.replace("QLDA Xây dựng V6.0", APP_VERSION_LABEL)
+    source = source.replace("Workflow engine: **V6.21**", "Workflow engine: **V6.22 PostgreSQL Cloud**")
+    source = source.replace("Approval UI / Workflow engine: V6.21", "Approval UI / Workflow engine: V6.22 PostgreSQL Cloud")
+
+    runtime_import = "from v621_webopt_runtime import install_runtime\n"
+    pg_bootstrap = (
+        "from postgres_backend_v622 import install_postgres_backend\n"
+        "install_postgres_backend()\n"
+    )
+    if runtime_import not in source:
+        raise RuntimeError("V6.22 runtime import anchor missing")
+    if "from postgres_backend_v622 import install_postgres_backend" not in source:
+        source = source.replace(runtime_import, pg_bootstrap + runtime_import, 1)
 
     typewriter_helper = r'''def _ai_typewriter_stream(stream):
     """Chia chunk AI lớn thành cụm nhỏ để luôn hiển thị dần trên Streamlit."""
@@ -89,7 +92,7 @@ def _finalize_source(source: str) -> str:
 
 '''
     if "def render_ai_assistant(pid: int):\n" not in source:
-        raise RuntimeError("V6.21 AI typewriter anchor missing")
+        raise RuntimeError("V6.22 AI typewriter anchor missing")
     source = source.replace(
         "def render_ai_assistant(pid: int):\n",
         typewriter_helper + "def render_ai_assistant(pid: int):\n",
@@ -98,28 +101,23 @@ def _finalize_source(source: str) -> str:
 
     ai_import = "from ai_service import (AIServiceError, AISettings, OpenAIProjectAssistant, GeminiSettings, GeminiProjectAssistant, ProjectContextBuilder)\n"
     if ai_import not in source:
-        raise RuntimeError("V6.21 AI import anchor missing")
+        raise RuntimeError("V6.22 AI import anchor missing")
     source = source.replace(
         ai_import,
         ai_import + "from ai_streaming_patch import install_ai_streaming\ninstall_ai_streaming()\n",
         1,
     )
 
-    # V6.21 WebOpt AI Streaming: hiển thị câu trả lời theo text delta ngay khi
-    # OpenAI/Gemini gửi về thay vì đợi đủ toàn bộ response rồi mới render.
     old_chat = '''            try:\n                with st.chat_message("assistant"):\n                    with st.spinner("AI đang phân tích dữ liệu dự án..."):\n                        answer = ai.ask_project(pid, q, previous, date.today(), use_web=False)\n                    st.markdown(answer)\n                st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
     new_chat = '''            try:\n                with st.chat_message("assistant"):\n                    _ai_status = st.empty()\n                    _ai_status.caption("AI đang phân tích dữ liệu dự án...")\n                    answer = st.write_stream(\n                        _ai_typewriter_stream(ai.ask_project_stream(pid, q, previous, date.today(), use_web=False))\n                    )\n                    _ai_status.empty()\n                answer = str(answer or "").strip()\n                if answer:\n                    st.session_state[hkey].append({"role": "assistant", "content": answer})\n            except Exception as exc:\n                st.error(str(exc))\n'''
     if old_chat not in source:
-        raise RuntimeError("V6.21 AI streaming chat anchor missing")
+        raise RuntimeError("V6.22 AI streaming chat anchor missing")
     source = source.replace(old_chat, new_chat, 1)
 
-    # Lọc theo nội dung dòng để tương thích cả source cũ và source đã mang hậu tố WebOpt.
     source = "\n".join(
         line for line in source.splitlines()
         if not any(marker in line for marker in HIDDEN_UI_NOTE_MARKERS)
     ) + "\n"
-    # Hai caption "Nhập đúng Mã..." là body duy nhất của if not attach_ready;
-    # sau khi ẩn caption phải bỏ luôn if rỗng để source vẫn hợp lệ.
     source = source.replace(
         "        if not attach_ready:\n        is_revision_return =",
         "        is_revision_return =",
@@ -131,11 +129,10 @@ def _finalize_source(source: str) -> str:
         "bundle_01.b64",
         "v612_source/streamlit_app_bundle",
     )
-    leaked = [x for x in forbidden if x in source]
+    leaked = [item for item in forbidden if item in source]
     if leaked:
-        raise RuntimeError(f"Historical runtime loader leaked into final WebOpt app: {leaked}")
-
-    leaked_notes = [x for x in FORBIDDEN_UI_NOTE_MARKERS if x in source]
+        raise RuntimeError(f"Historical runtime loader leaked into final V6.22 app: {leaked}")
+    leaked_notes = [item for item in FORBIDDEN_UI_NOTE_MARKERS if item in source]
     if leaked_notes:
         raise RuntimeError(f"UI note cleanup incomplete: {leaked_notes}")
     return source
@@ -145,18 +142,18 @@ def build() -> Path:
     root = Path(__file__).resolve().parent
     parts = sorted((root / "v621_webopt_source").glob("part_*.b64"))
     if len(parts) != 9:
-        raise RuntimeError(f"Incomplete V6.21 WebOpt source: expected 9 parts, found {len(parts)}")
-    encoded = "".join(p.read_text(encoding="ascii").strip() for p in parts)
+        raise RuntimeError(f"Incomplete V6.22 source: expected 9 parts, found {len(parts)}")
+    encoded = "".join(part.read_text(encoding="ascii").strip() for part in parts)
     source = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
     source = _finalize_source(source)
-    missing = [m for m in REQUIRED_MARKERS if m not in source]
+    missing = [marker for marker in REQUIRED_MARKERS if marker not in source]
     if missing:
-        raise RuntimeError(f"V6.21 WebOpt markers missing: {missing}")
+        raise RuntimeError(f"V6.22 markers missing: {missing}")
     out = root / "dist" / "streamlit_app.py"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(source, encoding="utf-8")
     compile(source, str(out), "exec")
-    print(f"V6.21 WebOpt production build OK: {len(source)} chars -> {out}")
+    print(f"V6.22 PostgreSQL Cloud build OK: {len(source)} chars -> {out}")
     return out
 
 
