@@ -26,7 +26,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "openai_api_key": "",
     "openai_model": "gpt-5-mini",
     "gemini_api_key": "",
-    "gemini_model": "gemini-2.5-flash",
+    "gemini_model": "auto",
     "openai_web_search": False,
     "specified_search_domains": DEFAULT_SPECIFIED_SEARCH_DOMAINS,
     "drive_enabled": False,
@@ -36,6 +36,27 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "drive_root_folder_url": "",
     "drive_root_folder_name": "QLDA Xây dựng",
 }
+
+
+def _runtime_value(name: str, default: str = "") -> str:
+    """Environment first, then root Streamlit Secret, without exposing values."""
+    value = str(os.environ.get(name, "") or "").strip()
+    if value:
+        return value
+    try:
+        import streamlit as st
+
+        value = str(st.secrets.get(name, "") or "").strip()
+    except Exception:
+        value = ""
+    return value or default
+
+
+def _runtime_bool(name: str, default: bool = False) -> bool:
+    value = _runtime_value(name, "")
+    if not value:
+        return bool(default)
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _clean_domains(values) -> list[str]:
@@ -49,6 +70,19 @@ def _clean_domains(values) -> list[str]:
         if d and "." in d and d not in seen:
             seen.add(d); out.append(d)
     return out
+
+
+def _runtime_provider(cfg: dict[str, Any]) -> str:
+    explicit = _runtime_value("AI_PROVIDER", "").strip().lower()
+    if explicit in {"openai", "gemini"}:
+        return explicit
+    # Community Cloud may have the Gemini key even if the local settings file is
+    # absent/reset.  Preserve previous QLDA behaviour by preferring Gemini then.
+    if _runtime_value("GEMINI_API_KEY", ""):
+        return "gemini"
+    if _runtime_value("OPENAI_API_KEY", ""):
+        return "openai"
+    return "gemini" if str(cfg.get("ai_provider") or "").strip().lower() == "gemini" else "openai"
 
 
 def load_app_settings() -> dict[str, Any]:
@@ -72,10 +106,22 @@ def load_app_settings() -> dict[str, Any]:
             pass
 
     data["specified_search_domains"] = _clean_domains(data.get("specified_search_domains")) or list(DEFAULT_SPECIFIED_SEARCH_DOMAINS)
-    data["ai_provider"] = "gemini" if str(data.get("ai_provider") or "openai").strip().lower() == "gemini" else "openai"
-    data["openai_model"] = str(data.get("openai_model") or "gpt-5-mini").strip() or "gpt-5-mini"
-    data["gemini_model"] = str(data.get("gemini_model") or "gemini-2.5-flash").strip() or "gemini-2.5-flash"
-    data["openai_web_search"] = bool(data.get("openai_web_search", False))
+
+    # Overlay non-secret runtime choices so the Settings/AI screens show the
+    # provider actually used by the server, not stale local defaults.
+    data["ai_provider"] = _runtime_provider(data)
+    data["openai_model"] = _runtime_value("OPENAI_MODEL", str(data.get("openai_model") or "gpt-5-mini")) or "gpt-5-mini"
+    data["gemini_model"] = _runtime_value("GEMINI_MODEL", str(data.get("gemini_model") or "auto")) or "auto"
+    web_default = bool(data.get("openai_web_search", False))
+    if _runtime_value("AI_WEB_SEARCH", ""):
+        data["openai_web_search"] = _runtime_bool("AI_WEB_SEARCH", web_default)
+    elif data["ai_provider"] == "gemini" and _runtime_value("GEMINI_WEB_SEARCH", ""):
+        data["openai_web_search"] = _runtime_bool("GEMINI_WEB_SEARCH", web_default)
+    elif data["ai_provider"] == "openai" and _runtime_value("OPENAI_WEB_SEARCH", ""):
+        data["openai_web_search"] = _runtime_bool("OPENAI_WEB_SEARCH", web_default)
+    else:
+        data["openai_web_search"] = web_default
+
     data["drive_enabled"] = bool(data.get("drive_enabled", False))
     data["drive_auto_upload"] = bool(data.get("drive_auto_upload", False))
     data["drive_root_folder_name"] = str(data.get("drive_root_folder_name") or "QLDA Xây dựng").strip() or "QLDA Xây dựng"
@@ -97,36 +143,33 @@ def get_specified_search_domains() -> tuple[str, ...]:
 
 def get_openai_runtime_settings() -> dict[str, Any]:
     cfg = load_app_settings()
-    env_web = os.environ.get("OPENAI_WEB_SEARCH")
-    if env_web is None:
-        use_web = bool(cfg.get("openai_web_search", False))
-    else:
-        use_web = env_web.strip().lower() in {"1", "true", "yes", "on"}
+    use_web = _runtime_bool("OPENAI_WEB_SEARCH", bool(cfg.get("openai_web_search", False)))
     return {
-        "api_key": (os.environ.get("OPENAI_API_KEY") or str(cfg.get("openai_api_key", ""))).strip(),
-        "model": (os.environ.get("OPENAI_MODEL") or str(cfg.get("openai_model", "gpt-5-mini"))).strip() or "gpt-5-mini",
+        "api_key": (_runtime_value("OPENAI_API_KEY", "") or str(cfg.get("openai_api_key", ""))).strip(),
+        "model": (_runtime_value("OPENAI_MODEL", "") or str(cfg.get("openai_model", "gpt-5-mini"))).strip() or "gpt-5-mini",
         "use_web": use_web,
     }
 
 
 def get_ai_runtime_settings() -> dict[str, Any]:
     cfg = load_app_settings()
-    provider = (os.environ.get("AI_PROVIDER") or str(cfg.get("ai_provider", "openai"))).strip().lower()
-    provider = "gemini" if provider == "gemini" else "openai"
-    env_web = os.environ.get("AI_WEB_SEARCH")
-    if env_web is None:
-        env_web = os.environ.get("GEMINI_WEB_SEARCH" if provider == "gemini" else "OPENAI_WEB_SEARCH")
-    use_web = bool(cfg.get("openai_web_search", False)) if env_web is None else env_web.strip().lower() in {"1", "true", "yes", "on"}
+    provider = _runtime_provider(cfg)
+    web_name = "GEMINI_WEB_SEARCH" if provider == "gemini" else "OPENAI_WEB_SEARCH"
+    if _runtime_value("AI_WEB_SEARCH", ""):
+        use_web = _runtime_bool("AI_WEB_SEARCH", bool(cfg.get("openai_web_search", False)))
+    else:
+        use_web = _runtime_bool(web_name, bool(cfg.get("openai_web_search", False)))
+
     if provider == "gemini":
         return {
             "provider": "gemini",
-            "api_key": (os.environ.get("GEMINI_API_KEY") or str(cfg.get("gemini_api_key", ""))).strip(),
-            "model": (os.environ.get("GEMINI_MODEL") or str(cfg.get("gemini_model", "gemini-2.5-flash"))).strip() or "gemini-2.5-flash",
+            "api_key": (_runtime_value("GEMINI_API_KEY", "") or str(cfg.get("gemini_api_key", ""))).strip(),
+            "model": (_runtime_value("GEMINI_MODEL", "") or str(cfg.get("gemini_model", "auto"))).strip() or "auto",
             "use_web": use_web,
         }
     return {
         "provider": "openai",
-        "api_key": (os.environ.get("OPENAI_API_KEY") or str(cfg.get("openai_api_key", ""))).strip(),
-        "model": (os.environ.get("OPENAI_MODEL") or str(cfg.get("openai_model", "gpt-5-mini"))).strip() or "gpt-5-mini",
+        "api_key": (_runtime_value("OPENAI_API_KEY", "") or str(cfg.get("openai_api_key", ""))).strip(),
+        "model": (_runtime_value("OPENAI_MODEL", "") or str(cfg.get("openai_model", "gpt-5-mini"))).strip() or "gpt-5-mini",
         "use_web": use_web,
     }
