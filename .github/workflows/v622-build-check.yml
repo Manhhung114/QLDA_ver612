@@ -7,6 +7,8 @@ on:
       - 'streamlit_app.py'
       - 'build_v621_webopt.py'
       - 'postgres_backend_v622.py'
+      - 'streamlit_secrets_v622.py'
+      - 'settings_store.py'
       - 'v621_webopt_runtime.py'
       - 'v615_runtime_patch.py'
       - 'cloud_db.py'
@@ -27,8 +29,22 @@ jobs:
           python-version: '3.12'
       - name: Compile V6.22 support modules
         run: |
-          python -m py_compile streamlit_app.py build_v621_webopt.py postgres_backend_v622.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
+          python -m py_compile streamlit_app.py build_v621_webopt.py postgres_backend_v622.py streamlit_secrets_v622.py settings_store.py v621_webopt_runtime.py v615_runtime_patch.py cloud_db.py ai_service.py ai_streaming_patch.py legal_documents.py
       - name: Rebuild and compile final Streamlit app
         run: |
           python build_v621_webopt.py
           python -m py_compile dist/streamlit_app.py
+      - name: Verify Gemini secrets bridge order
+        run: |
+          python - <<'PY'
+          from build_v621_webopt import build
+          text = build().read_text(encoding='utf-8')
+          a = text.index('from streamlit_secrets_v622 import apply_streamlit_secrets_to_env')
+          b = text.index('apply_streamlit_secrets_to_env()')
+          c = text.index('from postgres_backend_v622 import install_postgres_backend')
+          d = text.index('install_postgres_backend()')
+          e = text.index('from v621_webopt_runtime import install_runtime')
+          f = text.index('install_runtime()')
+          assert a < b < c < d < e < f
+          print('V6.22 Streamlit secrets/Gemini bootstrap order: OK')
+          PY
