@@ -1,0 +1,40 @@
+name: Auth Source Debug
+
+on:
+  push:
+    branches: [auth-debug]
+  workflow_dispatch:
+
+jobs:
+  inspect-auth-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build final V6.22 source
+        run: python build_v621_webopt.py
+      - name: Print auth helpers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('dist/streamlit_app.py').read_text(encoding='utf-8')
+          needles = [
+              '_QLDA_AUTH_COOKIE',
+              'def _browser_session_cookie',
+              'def _gateway_session_token',
+              'def _write_browser_session_cookie',
+              'def _clear_browser_session_cookie',
+              'qlda_drive_session_token',
+          ]
+          print('SOURCE_LENGTH', len(text))
+          for needle in needles:
+              print('\n===== NEEDLE:', needle, '=====')
+              pos = text.find(needle)
+              print('POS', pos)
+              if pos >= 0:
+                  start = max(0, pos - 2200)
+                  end = min(len(text), pos + 5000)
+                  print(text[start:end])
+          PY
